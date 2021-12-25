@@ -22,6 +22,8 @@ import tensorflow as tf
 
 from vit_jax import inference_time
 from vit_jax import train
+from vit_jax import train_mae
+from vit_jax import ft_mae
 from vit_jax import utils
 
 
@@ -67,6 +69,12 @@ def main(argv):
 
   if FLAGS.config.trainer == 'train':
     train.train_and_evaluate(FLAGS.config, _WORKDIR.value)
+  elif FLAGS.config.trainer == 'inference_time':
+    inference_time.inference_time(FLAGS.config, _WORKDIR.value)
+  elif FLAGS.config.trainer == 'train_mae':
+    train_mae.train_and_evaluate(FLAGS.config, _WORKDIR.value)
+  elif FLAGS.config.trainer == 'ft_mae':
+    ft_mae.train_and_evaluate(FLAGS.config, _WORKDIR.value)
   elif FLAGS.config.trainer == 'inference_time':
     inference_time.inference_time(FLAGS.config, _WORKDIR.value)
   else:

@@ -30,8 +30,94 @@ if sys.platform != 'darwin':
   resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
 # Adjust depending on the available RAM.
+_RESIZE_MIN = 256
 MAX_IN_MEMORY = 200_000
+MEAN_RGB = [0.485 * 255, 0.456 * 255, 0.406 * 255]
+STDDEV_RGB = [0.229 * 255, 0.224 * 255, 0.225 * 255]
 
+def normalize_image(image):
+  image -= tf.constant(MEAN_RGB, shape=[1, 1, 3], dtype=image.dtype)
+  image /= tf.constant(STDDEV_RGB, shape=[1, 1, 3], dtype=image.dtype)
+  return image
+
+def _central_crop(image, crop_height, crop_width):
+  """Performs central crops of the given image list.
+  Args:
+    image: a 3-D image tensor
+    crop_height: the height of the image following the crop.
+    crop_width: the width of the image following the crop.
+  Returns:
+    3-D tensor with cropped image.
+  """
+  shape = tf.shape(image)
+  height, width = shape[0], shape[1]
+
+  amount_to_be_cropped_h = (height - crop_height)
+  crop_top = amount_to_be_cropped_h // 2
+  amount_to_be_cropped_w = (width - crop_width)
+  crop_left = amount_to_be_cropped_w // 2
+  return tf.slice(
+      image, [crop_top, crop_left, 0], [crop_height, crop_width, -1])
+
+
+def _smallest_size_at_least(height, width, resize_min):
+  """Computes new shape with the smallest side equal to `smallest_side`.
+  Computes new shape with the smallest side equal to `smallest_side` while
+  preserving the original aspect ratio.
+  Args:
+    height: an int32 scalar tensor indicating the current height.
+    width: an int32 scalar tensor indicating the current width.
+    resize_min: A python integer or scalar `Tensor` indicating the size of
+      the smallest side after resize.
+  Returns:
+    new_height: an int32 scalar tensor indicating the new height.
+    new_width: an int32 scalar tensor indicating the new width.
+  """
+  resize_min = tf.cast(resize_min, tf.float32)
+
+  # Convert to floats to make subsequent calculations go smoothly.
+  height, width = tf.cast(height, tf.float32), tf.cast(width, tf.float32)
+
+  smaller_dim = tf.minimum(height, width)
+  scale_ratio = resize_min / smaller_dim
+
+  # Convert back to ints to make heights and widths that TF ops will accept.
+  new_height = tf.cast(height * scale_ratio, tf.int32)
+  new_width = tf.cast(width * scale_ratio, tf.int32)
+
+  return new_height, new_width
+
+def _aspect_preserving_resize(image, resize_min):
+  """Resize images preserving the original aspect ratio.
+  Args:
+    image: A 3-D image `Tensor`.
+    resize_min: A python integer or scalar `Tensor` indicating the size of
+      the smallest side after resize.
+  Returns:
+    resized_image: A 3-D tensor containing the resized image.
+  """
+  shape = tf.shape(image)
+  height, width = shape[0], shape[1]
+
+  new_height, new_width = _smallest_size_at_least(height, width, resize_min)
+
+  return _resize_image(image, new_height, new_width)
+
+
+def _resize_image(image, height, width):
+  """Simple wrapper around tf.resize_images.
+  This is primarily to make sure we use the same `ResizeMethod` and other
+  details each time.
+  Args:
+    image: A 3-D image `Tensor`.
+    height: The target height for the resized image.
+    width: The target width for the resized image.
+  Returns:
+    resized_image: A 3-D tensor containing the resized image. The first two
+      dimensions have the shape [height, width].
+  """
+  return tf.image.resize(
+      image, [height, width], method=tf.image.ResizeMethod.BILINEAR)
 
 def get_tfds_info(dataset, split):
   """Returns information about tfds dataset -- see `get_dataset_info()`."""
@@ -46,7 +132,7 @@ def get_tfds_info(dataset, split):
 
 def get_directory_info(directory):
   """Returns information about directory dataset -- see `get_dataset_info()`."""
-  examples_glob = f'{directory}/*/*.jpg'
+  examples_glob = f'{directory}/*/*.JPEG'
   paths = glob.glob(examples_glob)
   get_classname = lambda path: path.split('/')[-2]
   class_names = sorted(set(map(get_classname, paths)))
@@ -83,8 +169,8 @@ def get_datasets(config):
   """Returns `ds_train, ds_test` for specified `config`."""
 
   if os.path.isdir(config.dataset):
-    train_dir = os.path.join(config.dataset, 'train')
-    test_dir = os.path.join(config.dataset, 'test')
+    train_dir = os.path.join(config.dataset, config.pp['train'])
+    test_dir = os.path.join(config.dataset, config.pp['test'])
     if not os.path.isdir(train_dir):
       raise ValueError('Expected to find directories"{}" and "{}"'.format(
           train_dir,
@@ -123,6 +209,13 @@ def get_data_from_directory(*, config, directory, mode):
 
   image_decoder = lambda path: tf.image.decode_jpeg(tf.io.read_file(path), 3)
 
+  if config.trainer == 'train_mae':
+    return_mask = True
+    num_patches = config.num_patches
+  else:
+    return_mask = False
+    num_patches = None
+
   return get_data(
       data=data,
       mode=mode,
@@ -132,7 +225,9 @@ def get_data_from_directory(*, config, directory, mode):
       batch_size=config.batch_eval if mode == 'test' else config.batch,
       image_size=config.pp['crop'],
       shuffle_buffer=min(dataset_info['num_examples'], config.shuffle_buffer),
-      preprocess=_pp)
+      preprocess=_pp,
+      return_mask=return_mask,
+      num_patches=num_patches)
 
 
 def get_data_from_tfds(*, config, mode):
@@ -162,6 +257,7 @@ def get_data_from_tfds(*, config, mode):
       shuffle_buffer=min(dataset_info['num_examples'], config.shuffle_buffer))
 
 
+
 def get_data(*,
              data,
              mode,
@@ -171,7 +267,9 @@ def get_data(*,
              batch_size,
              image_size,
              shuffle_buffer,
-             preprocess=None):
+             preprocess=None,
+             return_mask=False,
+             num_patches=None):
   """Returns dataset for training/eval.
 
   Args:
@@ -200,21 +298,26 @@ def get_data(*,
       channels = im.shape[-1]
       begin, size, _ = tf.image.sample_distorted_bounding_box(
           tf.shape(im),
-          tf.zeros([0, 0, 4], tf.float32),
-          area_range=(0.05, 1.0),
-          min_object_covered=0,  # Don't enforce a minimum area.
+          tf.constant([0.0, 0.0, 1.0, 1.0], dtype=tf.float32, shape=[1, 1, 4]),
+          area_range=(0.08, 1.0),
+          min_object_covered=0.1,
           use_image_if_no_bounding_boxes=True)
       im = tf.slice(im, begin, size)
       # Unfortunately, the above operation loses the depth-dimension. So we
       # need to restore it the manual way.
       im.set_shape([None, None, channels])
-      im = tf.image.resize(im, [image_size, image_size])
-      if tf.random.uniform(shape=[]) > 0.5:
-        im = tf.image.flip_left_right(im)
+      im = _resize_image(im, image_size, image_size)
+      # if tf.random.uniform(shape=[]) > 0.5:
+      #   im = tf.image.flip_left_right(im)
     else:
-      im = tf.image.resize(im, [image_size, image_size])
-    im = (im - 127.5) / 127.5
-    label = tf.one_hot(data['label'], num_classes)  # pylint: disable=no-value-for-parameter
+      im = _aspect_preserving_resize(im, _RESIZE_MIN)
+      im = _central_crop(im, image_size, image_size)
+    im = normalize_image(im)
+    if return_mask:
+      label = tf.random.shuffle(tf.range(num_patches))
+      # np.random.permutation().astype(int) # [196]
+    else:
+      label = tf.one_hot(data['label'], num_classes)  # pylint: disable=no-value-for-parameter
     return {'image': im, 'label': label}
 
   data = data.repeat(repeats)
@@ -231,8 +334,12 @@ def get_data(*,
   def _shard(data):
     data['image'] = tf.reshape(data['image'],
                                [num_devices, -1, image_size, image_size, 3])
-    data['label'] = tf.reshape(data['label'],
-                               [num_devices, -1, num_classes])
+    if return_mask:
+      data['label'] = tf.reshape(data['label'],
+                                 [num_devices, -1, num_patches])
+    else:
+      data['label'] = tf.reshape(data['label'],
+                                 [num_devices, -1, num_classes])
     return data
 
   if num_devices is not None:
