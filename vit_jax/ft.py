@@ -29,7 +29,7 @@ import tensorflow as tf
 
 # from vit_jax import checkpoint
 from vit_jax import input_pipeline
-from vit_jax import mae
+from vit_jax import models_our
 # from vit_jax import momentum_clip
 from vit_jax import utils
 
@@ -124,8 +124,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   logging.info(ds_train)
   logging.info(ds_test)
 
-  # Build MAE
-  model = mae.ViT(**config.model)
+  # Build ViT
+  model = models_our.ViT(**config.model)
   def init_model():
     return model.init(
         jax.random.PRNGKey(0),
@@ -142,7 +142,14 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   else:
     logging.info(f'Load pretrained encoder from "{config.pretrained_path}"')
     state = flax_checkpoints.restore_checkpoint(config.pretrained_path, None)
-    params = {'Encoder': state['0']['target']['Encoder'], 'head': variables['params']['head']}
+    if 'mae' in config.trainer:
+      params = {'Encoder': state['0']['target']['Encoder'], 'head': variables['params']['head']}
+    elif 'xlnet' in config.trainer:
+      # todo
+      assert False
+    else:
+      assert False
+    
     if config.model.representation_size is not None:
       params['pre_logits'] = variables['params']['pre_logits']
     params = flax.core.freeze(params)

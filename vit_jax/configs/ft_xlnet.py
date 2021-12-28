@@ -75,8 +75,8 @@ def get_l16_config():
 def get_config(model):
 
   config = ml_collections.ConfigDict()
-  config.trainer = 'finetune_mae'
-  
+  config.trainer = 'finetune_xlnet'
+
   config.pretrained_path = './mae/'
   config.dataset = '/data/LargeData/Large/ImageNet/'
 

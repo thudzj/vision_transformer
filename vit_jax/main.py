@@ -23,7 +23,8 @@ import tensorflow as tf
 from vit_jax import inference_time
 from vit_jax import train
 from vit_jax import train_mae
-from vit_jax import ft_mae
+from vit_jax import train_xlnet
+from vit_jax import ft
 from vit_jax import utils
 
 
@@ -73,8 +74,10 @@ def main(argv):
     inference_time.inference_time(FLAGS.config, _WORKDIR.value)
   elif FLAGS.config.trainer == 'train_mae':
     train_mae.train_and_evaluate(FLAGS.config, _WORKDIR.value)
-  elif FLAGS.config.trainer == 'ft_mae':
-    ft_mae.train_and_evaluate(FLAGS.config, _WORKDIR.value)
+  elif FLAGS.config.trainer == 'train_xlnet':
+    train_xlnet.train_and_evaluate(FLAGS.config, _WORKDIR.value)
+  elif 'finetune' in FLAGS.config.trainer:
+    ft.train_and_evaluate(FLAGS.config, _WORKDIR.value)
   elif FLAGS.config.trainer == 'inference_time':
     inference_time.inference_time(FLAGS.config, _WORKDIR.value)
   else:
