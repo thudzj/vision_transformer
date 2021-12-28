@@ -145,13 +145,21 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
     if 'mae' in config.trainer:
       params = {'Encoder': state['0']['target']['Encoder'], 'head': variables['params']['head']}
     elif 'xlnet' in config.trainer:
-      # todo
-      assert False
+      encoder_params = flax.traverse_util._get_params_dict(state['0']['target']['Encoder'])
+      flat_dict = flax.traverse_util.flatten_dict(encoder_params, keep_empty_nodes=True)
+      new_dict = {}
+      for key, value in flax.traverse_util._sorted_items(flat_dict):
+        if 'two_stream' not in '/'.join(key):
+          new_dict[key] = value
+      encoder_params = flax.traverse_util.unflatten_dict(new_dict)
+      params = {'Encoder': encoder_params, 
+                'head': variables['params']['head']}
     else:
       assert False
     
     if config.model.representation_size is not None:
       params['pre_logits'] = variables['params']['pre_logits']
+
     params = flax.core.freeze(params)
 
   total_steps = config.epochs * steps_per_epoch

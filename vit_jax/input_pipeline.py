@@ -211,7 +211,7 @@ def get_data_from_directory(*, config, directory, mode):
 
   image_decoder = lambda path: tf.image.decode_jpeg(tf.io.read_file(path), 3)
 
-  if config.trainer == 'train_mae':
+  if config.trainer == 'train_mae' or config.trainer == 'train_xlnet':
     return_mask = True
     num_patches = config.num_patches
   else:

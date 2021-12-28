@@ -30,17 +30,7 @@ def get_b16_config():
   config.encoder.attention_dropout_rate = 0.0
   config.encoder.dropout_rate = 0.0
   config.encoder.drop_path_rate = 0.0
-
-  config.decoder = ml_collections.ConfigDict()
-  config.decoder.hidden_size = 384
-  config.decoder.mlp_dim = 1536
-  config.decoder.num_heads = 6
-  config.decoder.num_layers = 4
-  config.decoder.attention_dropout_rate = 0.0
-  config.decoder.dropout_rate = 0.0
-  config.encoder.drop_path_rate = 0.0
-  config.decoder.out_dim = 768
-
+  config.encoder.two_stream = True
   return config
 
 def get_l16_config():
@@ -58,17 +48,7 @@ def get_l16_config():
   config.encoder.attention_dropout_rate = 0.0
   config.encoder.dropout_rate = 0.0
   config.encoder.drop_path_rate = 0.0
-
-  config.decoder = ml_collections.ConfigDict()
-  config.decoder.hidden_size = 512
-  config.decoder.mlp_dim = 2048
-  config.decoder.num_heads = 8
-  config.decoder.num_layers = 8
-  config.decoder.attention_dropout_rate = 0.0
-  config.decoder.dropout_rate = 0.0
-  config.encoder.drop_path_rate = 0.0
-  config.decoder.out_dim = 768
-
+  config.encoder.two_stream = True
   return config
 
 # def get_h14_config():
@@ -149,6 +129,7 @@ def get_config(model):
 
   get_model_config = eval(f'get_{model}_config')
   config.model = get_model_config()
+  config.out_dim = 768
 
   config.patch_size = config.model.encoder.patches['size'][0]
   config.num_patches = (config.pp['crop'] // config.model.encoder.patches['size'][0])**2
