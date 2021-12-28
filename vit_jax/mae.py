@@ -197,12 +197,13 @@ class Encoder(nn.Module):
         x = jnp.take_along_axis(x, jnp.expand_dims(masks[:, :-self.num_mask], -1), 1)
 
     # Input Encoder
+    dpr = onp.linspace(0, self.drop_path_rate, self.num_layers)
     for lyr in range(self.num_layers):
       x = Block(
           mlp_dim=self.mlp_dim,
           dropout_rate=self.dropout_rate,
           attention_dropout_rate=self.attention_dropout_rate,
-          drop_path_rate=self.drop_path_rate,
+          drop_path_rate=dpr[lyr],
           name=f'encoderblock_{lyr}',
           num_heads=self.num_heads)(
               x, deterministic=not train)
@@ -217,6 +218,7 @@ class Decoder(nn.Module):
   num_heads: int
   dropout_rate: float = 0.1
   attention_dropout_rate: float = 0.1
+  drop_path_rate: float = 0.1
   out_dim: int = 768
 
   @nn.compact
@@ -224,11 +226,13 @@ class Decoder(nn.Module):
     assert inputs.ndim == 3  # (batch, len, emb)
 
     x = inputs
+    dpr = onp.linspace(0, self.drop_path_rate, self.num_layers)
     for lyr in range(self.num_layers):
       x = Block(
           mlp_dim=self.mlp_dim,
           dropout_rate=self.dropout_rate,
           attention_dropout_rate=self.attention_dropout_rate,
+          drop_path_rate=dpr[lyr],
           name=f'decoderblock_{lyr}',
           num_heads=self.num_heads)(
               x, deterministic=not train)
@@ -277,7 +281,7 @@ class MAE(nn.Module):
     x_full = jnp.concatenate([x_vis + pos_emd_vis, mt + pos_emd_mask], 1)
 
     # notice: if N_mask==0, the shape of x is [B, N_mask, 3 * 16 * 16]
-    x = Decoder(name='Dncoder', **self.decoder)(x_full, train=train, return_token_num=self.num_mask)
+    x = Decoder(name='Decoder', **self.decoder)(x_full, train=train, return_token_num=self.num_mask)
     return x
 
 class ViT(nn.Module):

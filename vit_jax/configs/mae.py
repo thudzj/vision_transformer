@@ -38,6 +38,7 @@ def get_b16_config():
   config.decoder.num_layers = 4
   config.decoder.attention_dropout_rate = 0.0
   config.decoder.dropout_rate = 0.0
+  config.encoder.drop_path_rate = 0.0
   config.decoder.out_dim = 768
 
   return config
@@ -65,6 +66,7 @@ def get_l16_config():
   config.decoder.num_layers = 8
   config.decoder.attention_dropout_rate = 0.0
   config.decoder.dropout_rate = 0.0
+  config.encoder.drop_path_rate = 0.0
   config.decoder.out_dim = 768
 
   return config
@@ -130,6 +132,8 @@ def get_config(model):
 
   # Number of batches to prefetch to device.
   config.prefetch = 2
+  config.flip = False
+  config.randaug = None
 
   # Base learning-rate for fine-tuning.
   # config.base_lr = 0.03

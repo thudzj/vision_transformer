@@ -29,6 +29,8 @@ if sys.platform != 'darwin':
   low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
   resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
+from vit_jax import autoaugment  # pylint: disable=g-import-not-at-top
+
 # Adjust depending on the available RAM.
 _RESIZE_MIN = 256
 MAX_IN_MEMORY = 200_000
@@ -117,7 +119,7 @@ def _resize_image(image, height, width):
       dimensions have the shape [height, width].
   """
   return tf.image.resize(
-      image, [height, width], method=tf.image.ResizeMethod.BILINEAR)
+      image, [height, width], method=tf.image.ResizeMethod.BICUBIC)
 
 def get_tfds_info(dataset, split):
   """Returns information about tfds dataset -- see `get_dataset_info()`."""
@@ -227,7 +229,9 @@ def get_data_from_directory(*, config, directory, mode):
       shuffle_buffer=min(dataset_info['num_examples'], config.shuffle_buffer),
       preprocess=_pp,
       return_mask=return_mask,
-      num_patches=num_patches)
+      num_patches=num_patches,
+      flip=config.flip,
+      randaug=config.randaug)
 
 
 def get_data_from_tfds(*, config, mode):
@@ -256,7 +260,11 @@ def get_data_from_tfds(*, config, mode):
       image_size=config.pp['crop'],
       shuffle_buffer=min(dataset_info['num_examples'], config.shuffle_buffer))
 
-
+def _at_least_x_are_equal(a, b, x):
+  """At least `x` of `a` and `b` `Tensors` are equal."""
+  match = tf.equal(a, b)
+  match = tf.cast(match, tf.int32)
+  return tf.greater_equal(tf.reduce_sum(match), x)
 
 def get_data(*,
              data,
@@ -267,6 +275,8 @@ def get_data(*,
              batch_size,
              image_size,
              shuffle_buffer,
+             flip,
+             randaug=None,
              preprocess=None,
              return_mask=False,
              num_patches=None):
@@ -295,24 +305,42 @@ def get_data(*,
     if im.shape[-1] == 1:
       im = tf.repeat(im, 3, axis=-1)
     if mode == 'train':
+      original_shape = tf.shape(im)
       channels = im.shape[-1]
       begin, size, _ = tf.image.sample_distorted_bounding_box(
           tf.shape(im),
           tf.constant([0.0, 0.0, 1.0, 1.0], dtype=tf.float32, shape=[1, 1, 4]),
           area_range=(0.08, 1.0),
           min_object_covered=0.1,
-          use_image_if_no_bounding_boxes=True)
+          use_image_if_no_bounding_boxes=True,
+          max_attempts=10)
       im = tf.slice(im, begin, size)
       # Unfortunately, the above operation loses the depth-dimension. So we
       # need to restore it the manual way.
       im.set_shape([None, None, channels])
-      im = _resize_image(im, image_size, image_size)
-      # if tf.random.uniform(shape=[]) > 0.5:
-      #   im = tf.image.flip_left_right(im)
+
+      bad = _at_least_x_are_equal(original_shape, tf.shape(im), 3)
+      im = tf.cond(
+          bad,
+          lambda: _central_crop(_aspect_preserving_resize(im, _RESIZE_MIN), image_size, image_size),
+          lambda: _resize_image(im, image_size, image_size))
+
+      if flip:
+          im = tf.image.random_flip_left_right(im)
+
+      if randaug:
+          input_image_type = im.dtype
+          im = tf.clip_by_value(im, 0.0, 255.0)
+          im = tf.cast(im, dtype=tf.uint8)
+          im = autoaugment.distort_image_with_randaugment(
+                im, int(randaug.split('-')[0]), float(randaug.split('-')[1]), float(randaug.split('-')[2]))
+          im = tf.cast(im, dtype=input_image_type)
+          im = tf.image.convert_image_dtype(im, dtype=tf.float32)
     else:
-      im = _aspect_preserving_resize(im, _RESIZE_MIN)
-      im = _central_crop(im, image_size, image_size)
+      im = _central_crop(_aspect_preserving_resize(im, _RESIZE_MIN), image_size, image_size)
+    
     im = normalize_image(im)
+
     if return_mask:
       label = tf.random.shuffle(tf.range(num_patches))
       # np.random.permutation().astype(int) # [196]

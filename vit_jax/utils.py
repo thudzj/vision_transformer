@@ -20,6 +20,7 @@ from absl import logging
 import jax
 import jax.numpy as jnp
 import tensorflow as tf
+import numpy as onp
 
 
 class GFileHandler(python_logging.StreamHandler):
@@ -117,3 +118,41 @@ def accumulate_gradient(loss_and_grad_fn, params, images, labels, accum_steps):
     return jax.tree_map(lambda x: x / accum_steps, (l, g))
   else:
     return loss_and_grad_fn(params, images, labels)
+
+def mixup_target(target, lam=1., smoothing=0.0):
+    y1 = jnp.ones_like(target) * (smoothing / target.shape[-1]) + target * (1. - smoothing)
+    y2 = jnp.flip(y1, axis=-2)
+    return y1 * lam + y2 * (1. - lam)
+
+def rand_bbox(img_shape, lam, rng, margin=0., count=None):
+    """ Standard CutMix bounding-box
+    Generates a random square bbox based on lambda value. This impl includes
+    support for enforcing a border margin as percent of bbox dimensions.
+    Args:
+        img_shape (tuple): Image shape as tuple
+        lam (float): Cutmix lambda value
+        margin (float): Percentage of bbox dimension to enforce as margin (reduce amount of box outside image)
+        count (int): Number of bbox to generate
+    """
+    ratio = jnp.sqrt(1 - lam)
+    img_h, img_w = img_shape[1:3]
+    cut_h, cut_w = (img_h * ratio).astype(int), (img_w * ratio).astype(int)
+    # margin_y, margin_x = 0, 0 #(margin * cut_h).astype(int), (margin * cut_w).astype(int)
+    cy = jax.random.choice(rng, img_h) #.randint(rng, count, 0 + margin_y, img_h - margin_y) #, size=count)
+    cx = jax.random.choice(rng, img_w) #.randint(rng, count, 0 + margin_x, img_w - margin_x) #, size=count)
+    yl = jnp.clip(cy - cut_h // 2, 0, img_h)
+    yh = jnp.clip(cy + cut_h // 2, 0, img_h)
+    xl = jnp.clip(cx - cut_w // 2, 0, img_w)
+    xh = jnp.clip(cx + cut_w // 2, 0, img_w)
+    return yl, yh, xl, xh
+
+def cutmix_bbox_and_lam(img_shape, lam, rng, correct_lam=True, count=None):
+    """ Generate bbox and apply lambda correction.
+    """
+    yl, yu, xl, xu = rand_bbox(img_shape, lam, rng, count=count)
+    if correct_lam:
+        bbox_area = (yu - yl) * (xu - xl)
+        lam = 1. - bbox_area / float(img_shape[1] * img_shape[2])
+    return (yl, yu, xl, xu), lam
+
+

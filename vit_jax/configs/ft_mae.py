@@ -77,7 +77,7 @@ def get_config(model):
   config = ml_collections.ConfigDict()
   config.trainer = 'ft_mae'
   
-  config.pretrained_dir = None
+  config.pretrained_path = './mae/'
   config.dataset = '/data/LargeData/Large/ImageNet/'
 
   config.weight_decay = 0.05
@@ -92,8 +92,12 @@ def get_config(model):
   config.beta2 = 0.999
 
   config.label_smoothing = 0.1
+  config.mix_prob = 1.
+  config.switch_prob = 0.5
   config.mixup = 0.8
   config.cutmix = 1.
+  config.flip = True
+  config.randaug = '2-9-0.5'
 
   # Batch size for training.
   config.batch = 512
