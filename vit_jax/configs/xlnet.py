@@ -20,6 +20,7 @@ def get_b16_config():
   """Returns the ViT-B/16 configuration."""
   config = ml_collections.ConfigDict()
   config.name = 'ViT-B_16'
+  config.half_precision = False
 
   config.encoder = ml_collections.ConfigDict()
   config.encoder.patches = ml_collections.ConfigDict({'size': (16, 16)})
@@ -30,14 +31,19 @@ def get_b16_config():
   config.encoder.attention_dropout_rate = 0.0
   config.encoder.dropout_rate = 0.0
   config.encoder.drop_path_rate = 0.0
-  config.encoder.two_stream = True
+  config.encoder.two_stream = 10
+
+  config.encoder.g_mlp_dim = 1536
+  config.encoder.g_num_heads = 6
+  config.encoder.g_attention_dropout_rate = 0.0
+  config.encoder.g_dropout_rate = 0.0
   return config
 
 def get_l16_config():
   """Returns the ViT-L/16 configuration."""
   config = ml_collections.ConfigDict()
   config.name = 'ViT-L_16'
-  config.use_learnable_pos_emb=False
+  config.half_precision = False
 
   config.encoder = ml_collections.ConfigDict()
   config.encoder.patches = ml_collections.ConfigDict({'size': (16, 16)})
@@ -48,7 +54,12 @@ def get_l16_config():
   config.encoder.attention_dropout_rate = 0.0
   config.encoder.dropout_rate = 0.0
   config.encoder.drop_path_rate = 0.0
-  config.encoder.two_stream = True
+  config.encoder.two_stream = 10
+
+  config.encoder.g_mlp_dim = 1536
+  config.encoder.g_num_heads = 6
+  config.encoder.g_attention_dropout_rate = 0.0
+  config.encoder.g_dropout_rate = 0.0
   return config
 
 # def get_h14_config():
@@ -115,6 +126,10 @@ def get_config(model):
   config.flip = False
   config.randaug = None
 
+  config.optim_half_precision = True
+
+  config.target_ratio = 0.25
+
   # Base learning-rate for fine-tuning.
   # config.base_lr = 0.03
   # How to decay the learning rate ("cosine" or "linear").
@@ -134,5 +149,6 @@ def get_config(model):
   config.patch_size = config.model.encoder.patches['size'][0]
   config.num_patches = (config.pp['crop'] // config.model.encoder.patches['size'][0])**2
   config.num_mask = int(config.num_patches * config.mask_ratio)
+  config.num_target = int(config.num_patches * config.target_ratio)
 
   return config.lock()

@@ -20,6 +20,9 @@ import jax
 from ml_collections import config_flags
 import tensorflow as tf
 
+from jax.lib import xla_bridge as xb
+from jax.lib import xla_extension as xc
+
 from vit_jax import inference_time
 from vit_jax import train
 from vit_jax import train_mae
@@ -38,12 +41,51 @@ config_flags.DEFINE_config_file(
     'File path to the training hyperparameter configuration.',
     lock_config=True)
 flags.mark_flags_as_required(['config', 'workdir'])
+flags.DEFINE_string('server_ip', '', help='IP of rank 0 server.')
+flags.DEFINE_integer('server_port', 0, help='port of rank 0 server.')
+flags.DEFINE_integer('num_hosts', 1, help='number of nodes in GPU cluster.')
+flags.DEFINE_integer('host_idx', 0, help='index of current node.')
 # Flags --jax_backend_target and --jax_xla_backend are available through JAX.
 
+def _reset_backend_state():
+  xb._backends = {}
+  xb._backends_errors = {}
+  xb._default_backend = None
+  xb.get_backend.cache_clear()
+
+def connect_to_gpu_cluster():
+  _reset_backend_state()
+  service = None
+  if FLAGS.host_idx == 0:
+    addr = f'{FLAGS.server_ip}:{FLAGS.server_port}'
+    logging.info('starting service on %s', addr)
+    service = xc.get_distributed_runtime_service(addr, FLAGS.num_hosts)
+    # We add an explicit call to shutdown the service via atexit, since it seems
+    # Python interpreter may not call the service destructor on process
+    # termination.
+    atexit.register(service.shutdown)
+
+  server_addr = f'{FLAGS.server_ip}:{FLAGS.server_port}'
+  logging.info('connecting to service on %s', server_addr)
+  dist_client = xc.get_distributed_runtime_client(server_addr, FLAGS.host_idx)
+  dist_client.connect()
+  atexit.register(dist_client.shutdown)
+
+  # register dist gpu backend
+  factory = functools.partial(jax.lib.xla_client.make_gpu_client, dist_client, FLAGS.host_idx)
+  xb.register_backend_factory('gpu', factory, priority=300)
+  return service
 
 def main(argv):
   if len(argv) > 1:
     raise app.UsageError('Too many command-line arguments.')
+
+  # each training node needs to connect to rank 0 server
+  # service = connect_to_gpu_cluster()
+  logging.info('gpu cluster connected with %d GPUs', jax.device_count())
+
+  logging.info('devices %s', jax.devices())
+  logging.info('local devices %s', jax.local_devices())
 
   utils.add_gfile_logger(_WORKDIR.value)
 

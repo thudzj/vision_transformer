@@ -3,12 +3,12 @@
 
 ## pretrain mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./mae --config=./vit_jax/configs/mae.py:b16  --config.batch=192 --config.batch_eval=30
+CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./mae --config=./vit_jax/configs/mae.py:b16  --config.batch=336 --config.batch_eval=30 
 ```
 
 ## finetune mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_mae --config=./vit_jax/configs/ft_mae.py:b16  --config.batch=96 --config.batch_eval=96
+CUDA_VISIBLE_DEVICES=2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet --config=./vit_jax/configs/xlnet.py:b16  --config.batch=400 --config.batch_eval=50
 ```
 
 ## pretrain xlnet:  

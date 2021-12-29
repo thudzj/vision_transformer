@@ -30,7 +30,7 @@ import tensorflow as tf
 # from vit_jax import checkpoint
 from vit_jax import input_pipeline
 from vit_jax import models_our
-# from vit_jax import momentum_clip
+from vit_jax import adamW_half_precision
 from vit_jax import utils
 
 from vit_jax.input_pipeline import MEAN_RGB, STDDEV_RGB
@@ -45,7 +45,7 @@ def make_update_fn(*, apply_fn, lr_fn, label_smoothing, mix_prob, switch_prob,
                    mixup, cutmix, lr_multipliers):
   """Returns update step for data parallel training."""
 
-  def update_fn(opt, step, batch, rng):
+  def update_fn(opt, dynamic_scale, step, batch, rng):
 
     rng1, rng2, new_rng = jax.random.split(rng, 3)
     # Bind the rng key to the device id (which is unique across hosts)
@@ -100,13 +100,22 @@ def make_update_fn(*, apply_fn, lr_fn, label_smoothing, mix_prob, switch_prob,
       return cross_entropy_loss(logits=logits, labels=labels)
     
     images, labels = mixup_cutmix_labelsmootning(batch['image'], batch['label'])
-    l, g = jax.value_and_grad(loss_fn)(opt.target, images, labels)
-    g = jax.tree_map(lambda x: jax.lax.pmean(x, axis_name='batch'), g)
+
+    if dynamic_scale:
+      grad_fn = dynamic_scale.value_and_grad(
+          loss_fn, axis_name='batch')
+      dynamic_scale, is_fin, l, g = grad_fn(opt.target, images, labels)
+      # g = jnp.where(is_fin, g, 0.)
+    else:
+      grad_fn = jax.value_and_grad(loss_fn)
+      l, g = grad_fn(opt.target, images, labels)
+      g = jax.tree_map(lambda x: jax.lax.pmean(x, axis_name='batch'), g)
+
     l = jax.lax.pmean(l, axis_name='batch')
     hparams = [item.replace(learning_rate=lr_fn(step) * lr_multipliers[i]) 
                       for i, item in enumerate(opt.optimizer_def.hyper_params)]
     opt = opt.apply_gradient(g, hyper_params=hparams)
-    return opt, l, new_rng, images
+    return opt, dynamic_scale, l, new_rng, images
   return jax.pmap(update_fn, axis_name='batch', donate_argnums=(0,))
 
 
@@ -186,19 +195,20 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   # # Create optimizer and replicate it over all TPUs/GPUs
   # opt = flax.optim.Adam(beta1=config.beta1, beta2=config.beta2, 
   #                       weight_decay=config.weight_decay).create(params)
+  opt_cls = functools.partial(adamW_half_precision.Optimizer, 
+                              beta1=config.beta1, beta2=config.beta2, 
+                              weight_decay=config.weight_decay, 
+                              half_precision=config.optim_half_precision)
+
   groups = [(flax.optim.ModelParamTraversal(
-               functools.partial(_filter, ['/embedding/'])), 
-             flax.optim.Adam(beta1=config.beta1, beta2=config.beta2, 
-                             weight_decay=config.weight_decay))]
+               functools.partial(_filter, ['/embedding/'])), opt_cls())]
   for i in range(config.model.encoder.num_layers):
     groups.append((flax.optim.ModelParamTraversal(
                      functools.partial(_filter, ['/encoderblock_{}/'.format(i)])), 
-                   flax.optim.Adam(beta1=config.beta1, beta2=config.beta2, 
-                                   weight_decay=config.weight_decay)))
+                   opt_cls()))
   groups.append((flax.optim.ModelParamTraversal(
                    functools.partial(_filter, ['/encoder_norm/', '/pre_logits/', '/head/'])),
-                 flax.optim.Adam(beta1=config.beta1, beta2=config.beta2, 
-                                 weight_decay=config.weight_decay)))
+                 opt_cls()))
   opt_def = flax.optim.MultiOptimizer(*groups)
   opt = opt_def.create(params)
 
@@ -218,6 +228,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   # logging.info('Will start/continue training at initial_step=%d', initial_step)
 
   opt_repl = flax.jax_utils.replicate(opt)
+
+  if config.model.half_precision and jax.local_devices()[0].platform == 'gpu':
+    dynamic_scale = flax.optim.DynamicScale()
+  else:
+    dynamic_scale = None
+  dynamic_scale_repl = flax.jax_utils.replicate(dynamic_scale)
 
   # Delete references to the objects that are not needed anymore
   del opt
@@ -244,8 +260,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       input_pipeline.prefetch(ds_train, config.prefetch)):
     
     with jax.profiler.StepTraceContext('train', step_num=step):
-      opt_repl, loss_repl, update_rng_repl, images_ = update_fn_repl(
-          opt_repl, flax.jax_utils.replicate(step), batch, update_rng_repl)
+      opt_repl, dynamic_scale_repl, loss_repl, update_rng_repl, images_ = update_fn_repl(
+          opt_repl, dynamic_scale_repl, flax.jax_utils.replicate(step), batch, update_rng_repl)
 
     # check if cutmix works
     if step < 50:

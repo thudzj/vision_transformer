@@ -30,6 +30,7 @@ if sys.platform != 'darwin':
   resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
 from vit_jax import autoaugment  # pylint: disable=g-import-not-at-top
+import jax.numpy as jnp
 
 # Adjust depending on the available RAM.
 _RESIZE_MIN = 256
@@ -218,6 +219,11 @@ def get_data_from_directory(*, config, directory, mode):
     return_mask = False
     num_patches = None
 
+  if config.model.half_precision:
+      data_dtype = jnp.bfloat16 if jax.local_devices()[0].platform == 'tpu' else jnp.float16
+  else:
+      data_dtype = jnp.float32
+
   return get_data(
       data=data,
       mode=mode,
@@ -231,7 +237,8 @@ def get_data_from_directory(*, config, directory, mode):
       return_mask=return_mask,
       num_patches=num_patches,
       flip=config.flip,
-      randaug=config.randaug)
+      randaug=config.randaug,
+      dtype=data_dtype)
 
 
 def get_data_from_tfds(*, config, mode):
@@ -279,7 +286,8 @@ def get_data(*,
              randaug=None,
              preprocess=None,
              return_mask=False,
-             num_patches=None):
+             num_patches=None,
+             dtype=jnp.float32):
   """Returns dataset for training/eval.
 
   Args:
@@ -340,12 +348,13 @@ def get_data(*,
       im = _central_crop(_aspect_preserving_resize(im, _RESIZE_MIN), image_size, image_size)
     
     im = normalize_image(im)
+    im = tf.image.convert_image_dtype(im, dtype=dtype)
 
     if return_mask:
       label = tf.random.shuffle(tf.range(num_patches))
       # np.random.permutation().astype(int) # [196]
     else:
-      label = tf.one_hot(data['label'], num_classes)  # pylint: disable=no-value-for-parameter
+      label = tf.cast(tf.one_hot(data['label'], num_classes), dtype)  # pylint: disable=no-value-for-parameter
     return {'image': im, 'label': label}
 
   data = data.repeat(repeats)

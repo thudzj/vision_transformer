@@ -30,7 +30,7 @@ import tensorflow as tf
 # from vit_jax import checkpoint
 from vit_jax import input_pipeline
 from vit_jax import models_our
-# from vit_jax import momentum_clip
+from vit_jax import adamW_half_precision
 from vit_jax import utils
 
 from vit_jax.input_pipeline import MEAN_RGB, STDDEV_RGB
@@ -59,7 +59,7 @@ def preprocess(batch, normlize_target, patch_size, num_mask):
 def make_update_fn(*, apply_fn, normlize_target, patch_size, num_mask, lr_fn):
   """Returns update step for data parallel training."""
 
-  def update_fn(opt, step, batch, rng):
+  def update_fn(opt, dynamic_scale, step, batch, rng):
 
     _, rng1 = jax.random.split(rng)
     _, new_rng = jax.random.split(rng1)
@@ -82,11 +82,19 @@ def make_update_fn(*, apply_fn, normlize_target, patch_size, num_mask, lr_fn):
       return mse_loss(logits=logits, labels=labels)
     
     images, masks, labels = preprocess(batch, normlize_target, patch_size, num_mask)
-    l, g = jax.value_and_grad(loss_fn)(opt.target, images, masks, labels)
-    g = jax.tree_map(lambda x: jax.lax.pmean(x, axis_name='batch'), g)
+    if dynamic_scale:
+      grad_fn = dynamic_scale.value_and_grad(
+          loss_fn, axis_name='batch')
+      dynamic_scale, is_fin, l, g = grad_fn(opt.target, images, masks, labels)
+      # g = jnp.where(is_fin, g, 0.)
+    else:
+      grad_fn = jax.value_and_grad(loss_fn)
+      l, g = grad_fn(opt.target, images, masks, labels)
+      g = jax.tree_map(lambda x: jax.lax.pmean(x, axis_name='batch'), g)
+    
     l = jax.lax.pmean(l, axis_name='batch')
     opt = opt.apply_gradient(g, learning_rate=lr_fn(step))
-    return opt, l, new_rng
+    return opt, dynamic_scale, l, new_rng
 
   return jax.pmap(update_fn, axis_name='batch', donate_argnums=(0,))
 
@@ -144,10 +152,17 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   infer_fn_repl = jax.pmap(functools.partial(model.apply, train=False))
 
   # Create optimizer and replicate it over all TPUs/GPUs
-  opt = flax.optim.Adam(beta1=config.beta1, beta2=config.beta2, 
-                        weight_decay=config.weight_decay).create(params)
+  opt = adamW_half_precision.Optimizer(beta1=config.beta1, beta2=config.beta2, 
+                                       weight_decay=config.weight_decay, 
+                                       half_precision=config.optim_half_precision).create(params)
   initial_step = 1
   opt_repl = flax.jax_utils.replicate(opt)
+
+  if config.model.half_precision and jax.local_devices()[0].platform == 'gpu':
+    dynamic_scale = flax.optim.DynamicScale()
+  else:
+    dynamic_scale = None
+  dynamic_scale_repl = flax.jax_utils.replicate(dynamic_scale)
 
   # Delete references to the objects that are not needed anymore
   del opt
@@ -174,8 +189,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       input_pipeline.prefetch(ds_train, config.prefetch)):
 
     with jax.profiler.StepTraceContext('train', step_num=step):
-      opt_repl, loss_repl, update_rng_repl = update_fn_repl(
-          opt_repl, flax.jax_utils.replicate(step), batch, update_rng_repl)
+      opt_repl, dynamic_scale_repl, loss_repl, update_rng_repl = update_fn_repl(
+          opt_repl, dynamic_scale_repl, flax.jax_utils.replicate(step), batch, update_rng_repl)
 
     for hook in hooks:
       hook(step)

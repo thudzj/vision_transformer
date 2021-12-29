@@ -20,6 +20,7 @@ def get_b16_config():
   """Returns the ViT-B/16 configuration."""
   config = ml_collections.ConfigDict()
   config.name = 'ViT-B_16'
+  config.half_precision = False
 
   config.encoder = ml_collections.ConfigDict()
   config.encoder.patches = ml_collections.ConfigDict({'size': (16, 16)})
@@ -38,7 +39,7 @@ def get_b16_config():
   config.decoder.num_layers = 4
   config.decoder.attention_dropout_rate = 0.0
   config.decoder.dropout_rate = 0.0
-  config.encoder.drop_path_rate = 0.0
+  config.decoder.drop_path_rate = 0.0
   config.decoder.out_dim = 768
 
   return config
@@ -47,7 +48,7 @@ def get_l16_config():
   """Returns the ViT-L/16 configuration."""
   config = ml_collections.ConfigDict()
   config.name = 'ViT-L_16'
-  config.use_learnable_pos_emb=False
+  config.half_precision = False
 
   config.encoder = ml_collections.ConfigDict()
   config.encoder.patches = ml_collections.ConfigDict({'size': (16, 16)})
@@ -66,7 +67,7 @@ def get_l16_config():
   config.decoder.num_layers = 8
   config.decoder.attention_dropout_rate = 0.0
   config.decoder.dropout_rate = 0.0
-  config.encoder.drop_path_rate = 0.0
+  config.decoder.drop_path_rate = 0.0
   config.decoder.out_dim = 768
 
   return config
@@ -134,6 +135,8 @@ def get_config(model):
   config.prefetch = 2
   config.flip = False
   config.randaug = None
+
+  config.optim_half_precision = True
 
   # Base learning-rate for fine-tuning.
   # config.base_lr = 0.03
