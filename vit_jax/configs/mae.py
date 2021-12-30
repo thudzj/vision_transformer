@@ -20,7 +20,7 @@ def get_b16_config():
   """Returns the ViT-B/16 configuration."""
   config = ml_collections.ConfigDict()
   config.name = 'ViT-B_16'
-  config.half_precision = False
+  config.half_precision = True
 
   config.encoder = ml_collections.ConfigDict()
   config.encoder.patches = ml_collections.ConfigDict({'size': (16, 16)})
@@ -48,7 +48,7 @@ def get_l16_config():
   """Returns the ViT-L/16 configuration."""
   config = ml_collections.ConfigDict()
   config.name = 'ViT-L_16'
-  config.half_precision = False
+  config.half_precision = True
 
   config.encoder = ml_collections.ConfigDict()
   config.encoder.patches = ml_collections.ConfigDict({'size': (16, 16)})
@@ -137,6 +137,7 @@ def get_config(model):
   config.randaug = None
 
   config.optim_half_precision = True
+  config.dynamic_scale = True
 
   # Base learning-rate for fine-tuning.
   # config.base_lr = 0.03

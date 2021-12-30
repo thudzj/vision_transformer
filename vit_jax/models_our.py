@@ -49,7 +49,7 @@ class DropPath(nn.Module):
         broadcast_shape[dim] = 1
       mask = random.bernoulli(rng, p=keep_prob, shape=broadcast_shape)
       mask = jnp.broadcast_to(mask, inputs.shape)
-      return lax.select(mask, (inputs / keep_prob).astype(inputs.dtype), jnp.zeros_like(inputs))
+      return lax.select(mask, jnp.asarray(inputs / keep_prob, inputs.dtype), jnp.zeros_like(inputs))
 
 # sin-cos position encoding
 # https://github.com/jadore801120/attention-is-all-you-need-pytorch/blob/master/transformer/Models.py#L31
@@ -314,7 +314,7 @@ class Encoder(nn.Module):
       cls = jnp.tile(cls, [n, 1, 1])
       x = jnp.concatenate([cls, x], axis=1)
 
-    pe = get_sinusoid_encoding_table((1, x.shape[1], c)).astype(self.dtype)
+    pe = get_sinusoid_encoding_table((1, x.shape[1], c)) #.astype(self.dtype)
     x = x + pe
     if self.dropout_rate > 0:
       x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
@@ -466,7 +466,7 @@ class MAE(nn.Module):
         bias_init=nn.initializers.normal(stddev=1e-6))(x_vis)
 
     B, N, C = x_vis.shape
-    expand_pos_embed = jnp.tile(get_sinusoid_encoding_table((1, N, C)).astype(dtype), [B, 1, 1])
+    expand_pos_embed = jnp.tile(get_sinusoid_encoding_table((1, N, C)), [B, 1, 1]) #.astype(dtype)
 
     # we don't unshuffle the correct visible token order,
     # but shuffle the pos embedding accorddingly.

@@ -27,6 +27,8 @@ import ml_collections
 import numpy as np
 import tensorflow as tf
 
+import jmp
+
 # from vit_jax import checkpoint
 from vit_jax import input_pipeline
 from vit_jax import models_our
@@ -45,7 +47,7 @@ def make_update_fn(*, apply_fn, lr_fn, label_smoothing, mix_prob, switch_prob,
                    mixup, cutmix, lr_multipliers):
   """Returns update step for data parallel training."""
 
-  def update_fn(opt, dynamic_scale, step, batch, rng):
+  def update_fn(opt, loss_scale, step, batch, rng):
 
     rng1, rng2, new_rng = jax.random.split(rng, 3)
     # Bind the rng key to the device id (which is unique across hosts)
@@ -91,31 +93,45 @@ def make_update_fn(*, apply_fn, lr_fn, label_smoothing, mix_prob, switch_prob,
       logp = jax.nn.log_softmax(logits)
       return -jnp.mean(jnp.sum(logp * labels, axis=1))
 
-    def loss_fn(params, images, labels):
+    def loss_fn(params, images, labels, loss_scale):
       logits = apply_fn(
           dict(params=params),
           rngs=dict(dropout=dropout_rng, droppath=droppath_rng),
           inputs=images,
           train=True)
-      return cross_entropy_loss(logits=logits, labels=labels)
+      return loss_scale.scale(cross_entropy_loss(logits=logits, labels=labels))
     
     images, labels = mixup_cutmix_labelsmootning(batch['image'], batch['label'])
 
-    if dynamic_scale:
-      grad_fn = dynamic_scale.value_and_grad(
-          loss_fn, axis_name='batch')
-      dynamic_scale, is_fin, l, g = grad_fn(opt.target, images, labels)
-      # g = jnp.where(is_fin, g, 0.)
-    else:
-      grad_fn = jax.value_and_grad(loss_fn)
-      l, g = grad_fn(opt.target, images, labels)
-      g = jax.tree_map(lambda x: jax.lax.pmean(x, axis_name='batch'), g)
+    l, g = jax.value_and_grad(loss_fn)(opt.target, images, labels, loss_scale)
+    l = jax.lax.pmean(loss_scale.unscale(l), axis_name='batch')
 
-    l = jax.lax.pmean(l, axis_name='batch')
-    hparams = [item.replace(learning_rate=lr_fn(step) * lr_multipliers[i]) 
+    if isinstance(loss_scale, jmp.NoOpLossScale):
+      policy = jmp.get_policy('p=f32,c=f32,o=f32')
+    else:
+      policy = jmp.get_policy('p=f32,c=f16,o=f16')
+
+    g = policy.cast_to_compute(g)
+    g = loss_scale.unscale(g)
+    # Taking the mean across all replicas to keep params in sync.
+    g = jax.lax.pmean(g, axis_name='batch')
+    # We compute our optimizer update in the same precision as params, even when
+    # doing mixed precision training.
+    g = policy.cast_to_param(g)
+
+    hyper_params = [item.replace(learning_rate=lr_fn(step) * lr_multipliers[i]) 
                       for i, item in enumerate(opt.optimizer_def.hyper_params)]
-    opt = opt.apply_gradient(g, hyper_params=hparams)
-    return opt, dynamic_scale, l, new_rng, images
+    new_target, new_state = opt.optimizer_def.apply_gradient(
+        hyper_params, opt.target, opt.state, g)
+    if isinstance(loss_scale, jmp.DynamicLossScale):
+        grads_finite = jmp.all_finite(g)
+        loss_scale = loss_scale.adjust(grads_finite)
+        new_target, new_state = jmp.select_tree(
+            grads_finite,
+            (new_target, new_state),
+            (opt.target, opt.state))
+    new_opt = opt.replace(target=new_target, state=new_state)
+    return new_opt, loss_scale, l, new_rng, images
   return jax.pmap(update_fn, axis_name='batch', donate_argnums=(0,))
 
 
@@ -230,10 +246,13 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   opt_repl = flax.jax_utils.replicate(opt)
 
   if config.model.half_precision and jax.local_devices()[0].platform == 'gpu':
-    dynamic_scale = flax.optim.DynamicScale()
+    if config.dynamic_scale:
+      loss_scale = jmp.DynamicLossScale(jmp.half_dtype()(2 ** 15))
+    else:
+      loss_scale = jmp.StaticLossScale(2 ** 15)
   else:
-    dynamic_scale = None
-  dynamic_scale_repl = flax.jax_utils.replicate(dynamic_scale)
+    loss_scale = jmp.NoOpLossScale()
+  loss_scale_repl = flax.jax_utils.replicate(loss_scale)
 
   # Delete references to the objects that are not needed anymore
   del opt
@@ -260,8 +279,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       input_pipeline.prefetch(ds_train, config.prefetch)):
     
     with jax.profiler.StepTraceContext('train', step_num=step):
-      opt_repl, dynamic_scale_repl, loss_repl, update_rng_repl, images_ = update_fn_repl(
-          opt_repl, dynamic_scale_repl, flax.jax_utils.replicate(step), batch, update_rng_repl)
+      opt_repl, loss_scale_repl, loss_repl, update_rng_repl, images_ = update_fn_repl(
+          opt_repl, loss_scale_repl, flax.jax_utils.replicate(step), batch, update_rng_repl)
 
     # check if cutmix works
     if step < 50:
