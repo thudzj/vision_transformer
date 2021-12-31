@@ -126,8 +126,8 @@ def get_config(model):
   config.flip = False
   config.randaug = None
 
-  config.optim_half_precision = True
-  config.dynamic_scale = True
+  config.optim_half_precision = False
+  config.dynamic_scale = False
 
   config.target_ratio = 0.25
 

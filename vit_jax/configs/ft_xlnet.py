@@ -116,7 +116,7 @@ def get_config(model):
   # Number of batches to prefetch to device.
   config.prefetch = 2
 
-  config.optim_half_precision = True
+  config.optim_half_precision = False
   config.dynamic_scale = True
 
   # Base learning-rate for fine-tuning.

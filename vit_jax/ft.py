@@ -119,19 +119,20 @@ def make_update_fn(*, apply_fn, lr_fn, label_smoothing, mix_prob, switch_prob,
     # doing mixed precision training.
     g = policy.cast_to_param(g)
 
+    old_target, old_state = opt.target, opt.state
     hyper_params = [item.replace(learning_rate=lr_fn(step) * lr_multipliers[i]) 
                       for i, item in enumerate(opt.optimizer_def.hyper_params)]
-    new_target, new_state = opt.optimizer_def.apply_gradient(
-        hyper_params, opt.target, opt.state, g)
+    # hyper_params = opt.optimizer_def.hyper_params.replace(learning_rate=lr_fn(step))
+    opt = opt.apply_gradient(g, hyper_params=hyper_params)
     if isinstance(loss_scale, jmp.DynamicLossScale):
         grads_finite = jmp.all_finite(g)
         loss_scale = loss_scale.adjust(grads_finite)
-        new_target, new_state = jmp.select_tree(
+        target, state = jmp.select_tree(
             grads_finite,
-            (new_target, new_state),
-            (opt.target, opt.state))
-    new_opt = opt.replace(target=new_target, state=new_state)
-    return new_opt, loss_scale, l, new_rng, images
+            (opt.target, opt.state),
+            (old_target, old_state))
+        opt = opt.replace(target=target, state=state)
+    return opt, loss_scale, l, new_rng, images
   return jax.pmap(update_fn, axis_name='batch', donate_argnums=(0,))
 
 
@@ -209,8 +210,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   infer_fn_repl = jax.pmap(functools.partial(model.apply, train=False))
 
   # # Create optimizer and replicate it over all TPUs/GPUs
-  # opt = flax.optim.Adam(beta1=config.beta1, beta2=config.beta2, 
-  #                       weight_decay=config.weight_decay).create(params)
   opt_cls = functools.partial(adamW_half_precision.Optimizer, 
                               beta1=config.beta1, beta2=config.beta2, 
                               weight_decay=config.weight_decay, 
@@ -227,6 +226,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
                  opt_cls()))
   opt_def = flax.optim.MultiOptimizer(*groups)
   opt = opt_def.create(params)
+  # opt = opt_cls().create(params)
 
   cnt = 0
   for ii, item in enumerate(opt_def.traversals):
