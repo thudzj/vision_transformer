@@ -117,7 +117,7 @@ def get_config(model):
   config.prefetch = 2
 
   config.optim_half_precision = False
-  config.dynamic_scale = True
+  config.dynamic_scale = False
 
   # Base learning-rate for fine-tuning.
   # config.base_lr = 0.03
