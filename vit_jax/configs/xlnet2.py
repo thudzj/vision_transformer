@@ -37,7 +37,7 @@ def get_b16_config():
   config.encoder.g_num_heads = 12
   config.encoder.g_attention_dropout_rate = 0.0
   config.encoder.g_dropout_rate = 0.0
-  config.encoder.g_predict_pos = False
+  config.encoder.g_predict_pos = True
   return config
 
 def get_l16_config():
@@ -61,7 +61,7 @@ def get_l16_config():
   config.encoder.g_num_heads = 16
   config.encoder.g_attention_dropout_rate = 0.0
   config.encoder.g_dropout_rate = 0.0
-  config.encoder.g_predict_pos = False
+  config.encoder.g_predict_pos = True
   return config
 
 # def get_h14_config():
@@ -147,11 +147,12 @@ def get_config(model):
 
   get_model_config = eval(f'get_{model}_config')
   config.model = get_model_config()
-  config.out_dim = 768
-
+  
   config.patch_size = config.model.encoder.patches['size'][0]
   config.num_patches = (config.pp['crop'] // config.model.encoder.patches['size'][0])**2
   config.num_mask = int(config.num_patches * config.mask_ratio)
   config.num_target = int(config.num_patches * config.target_ratio)
+
+  config.out_dim = config.num_patches
 
   return config.lock()

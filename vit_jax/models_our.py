@@ -286,6 +286,7 @@ class Encoder(nn.Module):
   drop_path_rate: float = 0.1
   classifier: str = None
   two_stream: int = int(1e8)
+  g_predict_pos: bool = False
   g_mlp_dim: int = None
   g_num_heads: int = None
   g_dropout_rate: float = None
@@ -295,7 +296,7 @@ class Encoder(nn.Module):
   @nn.compact
   def __call__(self, inputs, *, train, masks=None, num_target=None):
     # We can merge s2d+emb into a single conv; it's the same.
-    x = nn.Conv(
+    x_ = nn.Conv(
         features=self.hidden_size,
         kernel_size=self.patches.size,
         strides=self.patches.size,
@@ -304,18 +305,18 @@ class Encoder(nn.Module):
         dtype=self.dtype)(
             inputs)
 
-    # Here, x is a grid of embeddings.
-    n, h, w, c = x.shape
-    x = jnp.reshape(x, [n, h * w, c])
+    # Here, x_ is a grid of embeddings.
+    n, h, w, c = x_.shape
+    x_ = jnp.reshape(x_, [n, h * w, c])
 
     # If we want to add a class token, add it here.
     if self.classifier == 'token':
       cls = self.param('cls', nn.initializers.zeros, (1, 1, c))
       cls = jnp.tile(cls, [n, 1, 1])
-      x = jnp.concatenate([cls, x], axis=1)
+      x_ = jnp.concatenate([cls, x_], axis=1)
 
-    pe = get_sinusoid_encoding_table((1, x.shape[1], c)) #.astype(self.dtype)
-    x = x + pe
+    pe = get_sinusoid_encoding_table((1, x_.shape[1], c)) #.astype(self.dtype)
+    x = x_ + pe
     if self.dropout_rate > 0:
       x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
 
@@ -340,14 +341,21 @@ class Encoder(nn.Module):
     else:
       assert masks is not None
 
-      g = self.param('two_stream_g', nn.initializers.normal(stddev=0.02), (1, 1, c))
       if num_target is None:
         num_target = self.num_mask
         x = jnp.take_along_axis(x, jnp.expand_dims(masks, -1), 1)
-        g = jnp.take_along_axis(g + pe, jnp.expand_dims(masks[:, -self.num_mask:], -1), 1)
+        if self.g_predict_pos:
+          g = jnp.take_along_axis(x_, jnp.expand_dims(masks[:, -self.num_mask:], -1), 1)
+        else:
+          g = self.param('two_stream_g', nn.initializers.normal(stddev=0.02), (1, 1, c))
+          g = jnp.take_along_axis(g + pe, jnp.expand_dims(masks[:, -self.num_mask:], -1), 1)
       else:
         x = jnp.take_along_axis(x, jnp.expand_dims(masks[:, :num_target-self.num_mask], -1), 1)
-        g = jnp.take_along_axis(g + pe, jnp.expand_dims(masks[:, -self.num_mask:num_target-self.num_mask], -1), 1)
+        if self.g_predict_pos:
+          g = jnp.take_along_axis(x_, jnp.expand_dims(masks[:, -self.num_mask:num_target-self.num_mask], -1), 1)
+        else:
+          g = self.param('two_stream_g', nn.initializers.normal(stddev=0.02), (1, 1, c))
+          g = jnp.take_along_axis(g + pe, jnp.expand_dims(masks[:, -self.num_mask:num_target-self.num_mask], -1), 1)
 
       m1 = jnp.concatenate([jnp.zeros((x.shape[1] - num_target, num_target)), 
                             jnp.tril(jnp.ones((num_target, num_target)))], axis=0)
@@ -478,7 +486,7 @@ class MAE(nn.Module):
 
     # notice: if N_mask==0, the shape of x is [B, N_mask, 3 * 16 * 16]
     x = Decoder(name='Decoder', dtype=dtype, **self.decoder)(x_full, train=train, return_token_num=self.num_mask)
-    return x.astype(dtype)
+    return x#.astype(dtype)
 
 
 class XLNet(nn.Module):
@@ -496,16 +504,16 @@ class XLNet(nn.Module):
     else:
         dtype = jnp.float32
 
-    g = Encoder(name='Encoder', num_mask=self.num_mask, dtype=dtype, **self.encoder)(
-                                              inputs, masks=masks, train=train, 
-                                              num_target=num_target)
+    g = Encoder(name='Encoder', num_mask=self.num_mask, 
+                dtype=dtype, **self.encoder)(
+                    inputs, masks=masks, train=train, num_target=num_target)
     g = nn.Dense(
         name='out',
         features=self.out_dim,
         kernel_init=nn.initializers.xavier_uniform(),
         bias_init=nn.initializers.normal(stddev=1e-6),
         dtype=dtype)(g)
-    return g.astype(dtype)
+    return g#.astype(dtype)
 
 
 class ViT(nn.Module):
@@ -548,4 +556,4 @@ class ViT(nn.Module):
         kernel_init=nn.initializers.xavier_uniform(),
         bias_init=nn.initializers.normal(stddev=1e-6),
         dtype=dtype)(x)
-    return x.astype(dtype)
+    return x#.astype(dtype)

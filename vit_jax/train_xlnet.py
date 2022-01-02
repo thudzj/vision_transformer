@@ -59,8 +59,8 @@ def preprocess(batch, normlize_target, patch_size, num_mask, num_target):
                                       -num_mask:-num_mask+num_target], -1), 1)
   return images, masks, labels
 
-def make_update_fn(*, apply_fn, normlize_target, patch_size, num_mask, 
-                   num_target, lr_fn):
+def make_update_fn(*, apply_fn, normlize_target, patch_size, num_patches, num_mask, 
+                   num_target, lr_fn, predict_pos=False):
   """Returns update step for data parallel training."""
 
   def update_fn(opt, loss_scale, step, batch, rng):
@@ -76,6 +76,10 @@ def make_update_fn(*, apply_fn, normlize_target, patch_size, num_mask,
     def mse_loss(*, logits, labels):
       return jnp.mean((logits - labels) ** 2)
 
+    def cross_entropy_loss(*, logits, labels):
+      logp = jax.nn.log_softmax(logits)
+      return -jnp.mean(jnp.sum(logp * labels, axis=-1))
+
     def loss_fn(params, images, masks, labels, loss_scale):
       logits = apply_fn(
           dict(params=params),
@@ -84,9 +88,14 @@ def make_update_fn(*, apply_fn, normlize_target, patch_size, num_mask,
           masks=masks,
           num_target=num_target,
           train=True)
-      return loss_scale.scale(mse_loss(logits=logits, labels=labels))
+      fn = mse_loss if not predict_pos else cross_entropy_loss
+      return loss_scale.scale(fn(logits=logits, labels=labels))
     
-    images, masks, labels = preprocess(batch, normlize_target, patch_size, num_mask, num_target)
+    if predict_pos:
+      images, masks = batch['image'], batch['label']
+      labels = jax.nn.one_hot(masks[:, -num_mask:-num_mask+num_target], num_patches)
+    else:
+      images, masks, labels = preprocess(batch, normlize_target, patch_size, num_mask, num_target)
     l, g = jax.value_and_grad(loss_fn)(opt.target, images, masks, labels, loss_scale)
     l = jax.lax.pmean(loss_scale.unscale(l), axis_name='batch')
 
@@ -166,9 +175,11 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   update_fn_repl = make_update_fn(
       apply_fn=model.apply, normlize_target=config.normlize_target, 
       patch_size=config.patch_size, 
+      num_patches=config.num_patches,
       num_mask=config.num_mask, 
       num_target=config.num_target,
-      lr_fn=lr_fn)
+      lr_fn=lr_fn,
+      predict_pos=config.model.encoder.g_predict_pos)
   infer_fn_repl = jax.pmap(functools.partial(model.apply, train=False))
 
   # Create optimizer and replicate it over all TPUs/GPUs
@@ -242,49 +253,95 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
     # Run evaluation
     if ((config.eval_every and step % config.eval_every == 0) or
         (step == total_steps)):
-      test_batch = next(iter(ds_test))
-      images = np.asarray(memoryview(test_batch['image']), test_batch['image'].dtype.name)
-      masks = np.asarray(memoryview(test_batch['label']), test_batch['label'].dtype.name)
+      if config.model.encoder.g_predict_pos:
+        test_batch = next(iter(ds_test))
+        images = np.asarray(memoryview(test_batch['image']), test_batch['image'].dtype.name)
+        masks = np.asarray(memoryview(test_batch['label']), test_batch['label'].dtype.name)
 
-      mean = np.array(MEAN_RGB)/255.
-      std = np.array(STDDEV_RGB)/255.
-      unnorm_images = images * std + mean  # in [0, 1]
-      unnorm_images = rearrange(unnorm_images, 'a b (h p1) (w p2) c -> a b (h w) (p1 p2) c', 
-                                p1=config.patch_size, p2=config.patch_size)
-      if config.normlize_target:
-          patches_mean = jnp.mean(unnorm_images, axis=-2, keepdims=True)
-          patches_std = jnp.sqrt(jnp.nanvar(unnorm_images, axis=-2, ddof=1, keepdims=True))
-      else:
-          patches_mean = 0
-          patches_std = 1
-      recon = infer_fn_repl(dict(params=opt_repl.target), inputs=images, masks=masks)
-      recon = rearrange(recon[0], 'b n (p c) -> b n p c', c=3)
-      recon = recon * jnp.take_along_axis(patches_std[0],
-                  jnp.expand_dims(jnp.expand_dims(masks[0, :, -config.num_mask:], -1), -1), 1) \
-              + jnp.take_along_axis(patches_mean[0], 
-                  jnp.expand_dims(jnp.expand_dims(masks[0, :, -config.num_mask:], -1), -1), 1)
+        mean = np.array(MEAN_RGB)/255.
+        std = np.array(STDDEV_RGB)/255.
+        unnorm_images = images * std + mean  # in [0, 1]
+        unnorm_images = rearrange(unnorm_images, 'a b (h p1) (w p2) c -> a b (h w) (p1 p2) c', 
+                                  p1=config.patch_size, p2=config.patch_size)
+        
+        recon = infer_fn_repl(dict(params=opt_repl.target), inputs=images, masks=masks)
+        recon = jnp.argmax(recon[0], -1)
 
-      vis = jnp.take_along_axis(unnorm_images[0], jnp.expand_dims(
-          jnp.expand_dims(masks[0, :, :-config.num_mask], -1), -1), 1)
-      recon, vis = jnp.concatenate([vis, recon], axis=1), jnp.concatenate([vis, jnp.zeros_like(recon)], axis=1)
+        recon_ = []
+        for idx_b in range(recon.shape[0]):
+          recon_b = []
+          for idx_p in range(recon.shape[1]):
+            recon_b.append(utils.pos2img(recon[idx_b, idx_p], config.pp['crop']//config.patch_size,
+                                         config.patch_size, config.patch_size))
+          recon_.append(np.stack(recon_b, 0).reshape(recon.shape[1], -1, 3))
+        recon = jnp.asarray(np.stack(recon_, 0))
+        
+        vis = jnp.take_along_axis(unnorm_images[0], jnp.expand_dims(
+            jnp.expand_dims(masks[0, :, :-config.num_mask], -1), -1), 1)
+        recon, vis = jnp.concatenate([vis, recon], axis=1), jnp.concatenate([vis, jnp.zeros_like(recon)], axis=1)
 
-      unnorm_images = rearrange(unnorm_images[0], 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
-                                p1=config.patch_size, h=config.pp['crop']//config.patch_size)
-      
-      reverse_masks = jnp.expand_dims(jnp.expand_dims(jnp.argsort(masks[0]), -1), -1)
-      recon = jnp.take_along_axis(recon, reverse_masks, 1)
-      vis = jnp.take_along_axis(vis, reverse_masks, 1)
-      recon = rearrange(recon, 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
+        unnorm_images = rearrange(unnorm_images[0], 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
+                                  p1=config.patch_size, h=config.pp['crop']//config.patch_size)
+        
+        reverse_masks = jnp.expand_dims(jnp.expand_dims(jnp.argsort(masks[0]), -1), -1)
+        recon = jnp.take_along_axis(recon, reverse_masks, 1)
+        vis = jnp.take_along_axis(vis, reverse_masks, 1)
+        recon = rearrange(recon, 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
+                          p1=config.patch_size, h=config.pp['crop']//config.patch_size)
+        vis = rearrange(vis, 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
                         p1=config.patch_size, h=config.pp['crop']//config.patch_size)
-      vis = rearrange(vis, 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
-                      p1=config.patch_size, h=config.pp['crop']//config.patch_size)
-      writer.write_images(
-          step,
-          dict(
-              samples=unnorm_images,
-              vis=vis,
-              recon=recon,)
-          )
+        writer.write_images(
+            step,
+            dict(
+                samples=unnorm_images,
+                vis=vis,
+                recon=recon,)
+            )
+
+      else:
+        test_batch = next(iter(ds_test))
+        images = np.asarray(memoryview(test_batch['image']), test_batch['image'].dtype.name)
+        masks = np.asarray(memoryview(test_batch['label']), test_batch['label'].dtype.name)
+
+        mean = np.array(MEAN_RGB)/255.
+        std = np.array(STDDEV_RGB)/255.
+        unnorm_images = images * std + mean  # in [0, 1]
+        unnorm_images = rearrange(unnorm_images, 'a b (h p1) (w p2) c -> a b (h w) (p1 p2) c', 
+                                  p1=config.patch_size, p2=config.patch_size)
+        if config.normlize_target:
+            patches_mean = jnp.mean(unnorm_images, axis=-2, keepdims=True)
+            patches_std = jnp.sqrt(jnp.nanvar(unnorm_images, axis=-2, ddof=1, keepdims=True))
+        else:
+            patches_mean = 0
+            patches_std = 1
+        recon = infer_fn_repl(dict(params=opt_repl.target), inputs=images, masks=masks)
+        recon = rearrange(recon[0], 'b n (p c) -> b n p c', c=3)
+        recon = recon * jnp.take_along_axis(patches_std[0],
+                    jnp.expand_dims(jnp.expand_dims(masks[0, :, -config.num_mask:], -1), -1), 1) \
+                + jnp.take_along_axis(patches_mean[0], 
+                    jnp.expand_dims(jnp.expand_dims(masks[0, :, -config.num_mask:], -1), -1), 1)
+
+        vis = jnp.take_along_axis(unnorm_images[0], jnp.expand_dims(
+            jnp.expand_dims(masks[0, :, :-config.num_mask], -1), -1), 1)
+        recon, vis = jnp.concatenate([vis, recon], axis=1), jnp.concatenate([vis, jnp.zeros_like(recon)], axis=1)
+
+        unnorm_images = rearrange(unnorm_images[0], 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
+                                  p1=config.patch_size, h=config.pp['crop']//config.patch_size)
+        
+        reverse_masks = jnp.expand_dims(jnp.expand_dims(jnp.argsort(masks[0]), -1), -1)
+        recon = jnp.take_along_axis(recon, reverse_masks, 1)
+        vis = jnp.take_along_axis(vis, reverse_masks, 1)
+        recon = rearrange(recon, 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
+                          p1=config.patch_size, h=config.pp['crop']//config.patch_size)
+        vis = rearrange(vis, 'b (h w) (p1 p2) c -> b (h p1) (w p2) c', 
+                        p1=config.patch_size, h=config.pp['crop']//config.patch_size)
+        writer.write_images(
+            step,
+            dict(
+                samples=unnorm_images,
+                vis=vis,
+                recon=recon,)
+            )
 
     # Store checkpoint.
     if ((config.checkpoint_every and step % config.checkpoint_every == 0) or
