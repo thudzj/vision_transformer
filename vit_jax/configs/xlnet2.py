@@ -129,7 +129,7 @@ def get_config(model):
   config.randaug = None
 
   config.optim_half_precision = False
-  config.dynamic_scale = False
+  config.dynamic_scale = True
 
   config.target_ratio = 0.25
 
@@ -154,5 +154,6 @@ def get_config(model):
   config.num_target = int(config.num_patches * config.target_ratio)
 
   config.out_dim = config.num_patches
+  config.sigma2 = 0.2
 
   return config.lock()

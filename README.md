@@ -23,7 +23,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet --co
 
 type2
 ```
-CUDA_VISIBLE_DEVICES=0,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet2 --config=./vit_jax/configs/xlnet2.py:b16  --config.batch=768 --config.batch_eval=60
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet2 --config=./vit_jax/configs/xlnet2.py:b16  --config.batch=1024 --config.batch_eval=80
 ```
 
 ## finetune xlnet:  

@@ -30,14 +30,10 @@ def get_b16_config():
   config.encoder.num_layers = 12
   config.encoder.attention_dropout_rate = 0.0
   config.encoder.dropout_rate = 0.0
-  config.encoder.drop_path_rate = 0.0
-  config.encoder.two_stream = 10
+  config.encoder.drop_path_rate = 0.1
 
-  config.encoder.g_mlp_dim = 3072
-  config.encoder.g_num_heads = 12
-  config.encoder.g_attention_dropout_rate = 0.0
-  config.encoder.g_dropout_rate = 0.0
-  config.encoder.g_predict_pos = False
+  config.classifier = 'gap'
+  config.representation_size = None
   return config
 
 def get_l16_config():
@@ -54,14 +50,10 @@ def get_l16_config():
   config.encoder.num_layers = 24
   config.encoder.attention_dropout_rate = 0.0
   config.encoder.dropout_rate = 0.0
-  config.encoder.drop_path_rate = 0.0
-  config.encoder.two_stream = 10
+  config.encoder.drop_path_rate = 0.1
 
-  config.encoder.g_mlp_dim = 4096
-  config.encoder.g_num_heads = 16
-  config.encoder.g_attention_dropout_rate = 0.0
-  config.encoder.g_dropout_rate = 0.0
-  config.encoder.g_predict_pos = False
+  config.classifier = 'gap'
+  config.representation_size = None
   return config
 
 # def get_h14_config():
@@ -84,31 +76,29 @@ def get_l16_config():
 def get_config(model):
 
   config = ml_collections.ConfigDict()
-  config.trainer = 'train_xlnet'
-  # Where to search for pretrained ViT models.
-  # Can be downloaded from gs://vit_models/imagenet21k
-  # config.pretrained_dir = None
-  # Which dataset to finetune on. This can be the name of a tfds dataset
-  # (see https://www.tensorflow.org/datasets/catalog/overview), or the path to
-  # a directory with the following structure ($filename can be arbitrary):
-  # "{train,test}/$class_name/$filename.jpg"
+  config.trainer = 'finetune_xlnet'
+
+  config.pretrained_path = './xlnet2/'
   config.dataset = '/data/LargeData/Large/ImageNet/'
-  # Path to manually downloaded dataset
-  # config.tfds_manual_dir = None
-  # Path to tensorflow_datasets directory
-  # config.tfds_data_dir = None
-  # Number of steps; determined by hyper module if not specified.
-  config.mask_ratio = 0.75
-  config.normlize_target = True
 
   config.weight_decay = 0.05
-  config.base_lr = 1.5e-4
+  config.base_lr = 1e-3
   config.decay_type = 'cosine'
-  config.warmup_epochs = 40
-  config.epochs = 1600
+  config.warmup_epochs = 5
+  config.epochs = 100
+
+  config.layer_wise_lr_decay = 0.75
 
   config.beta1 = 0.9
-  config.beta2 = 0.95
+  config.beta2 = 0.999
+
+  config.label_smoothing = 0.1
+  config.mix_prob = 1.
+  config.switch_prob = 0.5
+  config.mixup = 0.8
+  config.cutmix = 1.
+  config.flip = True
+  config.randaug = '2-9-0.5'
 
   # Batch size for training.
   config.batch = 512
@@ -125,13 +115,9 @@ def get_config(model):
 
   # Number of batches to prefetch to device.
   config.prefetch = 2
-  config.flip = False
-  config.randaug = None
 
   config.optim_half_precision = False
-  config.dynamic_scale = False
-
-  config.target_ratio = 0.25
+  config.dynamic_scale = True
 
   # Base learning-rate for fine-tuning.
   # config.base_lr = 0.03
@@ -147,12 +133,8 @@ def get_config(model):
 
   get_model_config = eval(f'get_{model}_config')
   config.model = get_model_config()
-  config.out_dim = 768
-  config.sigma2 = None
 
   config.patch_size = config.model.encoder.patches['size'][0]
   config.num_patches = (config.pp['crop'] // config.model.encoder.patches['size'][0])**2
-  config.num_mask = int(config.num_patches * config.mask_ratio)
-  config.num_target = int(config.num_patches * config.target_ratio)
 
   return config.lock()

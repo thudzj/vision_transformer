@@ -15,6 +15,7 @@
 import functools
 import os
 import time
+import math
 
 from absl import logging
 from clu import metric_writers
@@ -60,7 +61,7 @@ def preprocess(batch, normlize_target, patch_size, num_mask, num_target):
   return images, masks, labels
 
 def make_update_fn(*, apply_fn, normlize_target, patch_size, num_patches, num_mask, 
-                   num_target, lr_fn, predict_pos=False):
+                   num_target, lr_fn, predict_pos=False, sigma2=None):
   """Returns update step for data parallel training."""
 
   def update_fn(opt, loss_scale, step, batch, rng):
@@ -93,7 +94,13 @@ def make_update_fn(*, apply_fn, normlize_target, patch_size, num_patches, num_ma
     
     if predict_pos:
       images, masks = batch['image'], batch['label']
-      labels = jax.nn.one_hot(masks[:, -num_mask:-num_mask+num_target], num_patches)
+      ncol = int(math.sqrt(num_patches))
+      row_labels = masks[:, -num_mask:-num_mask+num_target].reshape(-1, 1, 1) // ncol
+      col_labels = masks[:, -num_mask:-num_mask+num_target].reshape(-1, 1, 1) % ncol
+      labels = jnp.exp(-((row_labels - jnp.arange(ncol).reshape(1, -1, 1)) ** 2 + 
+                (col_labels - jnp.arange(ncol).reshape(1, 1, -1)) ** 2) / 2. / sigma2)
+      labels = labels.reshape(images.shape[0], -1, num_patches)
+      labels = labels / jnp.sum(labels, axis=-1, keepdims=True)
     else:
       images, masks, labels = preprocess(batch, normlize_target, patch_size, num_mask, num_target)
     l, g = jax.value_and_grad(loss_fn)(opt.target, images, masks, labels, loss_scale)
@@ -179,7 +186,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       num_mask=config.num_mask, 
       num_target=config.num_target,
       lr_fn=lr_fn,
-      predict_pos=config.model.encoder.g_predict_pos)
+      predict_pos=config.model.encoder.g_predict_pos,
+      sigma2=config.sigma2)
   infer_fn_repl = jax.pmap(functools.partial(model.apply, train=False))
 
   # Create optimizer and replicate it over all TPUs/GPUs
