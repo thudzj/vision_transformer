@@ -45,7 +45,7 @@ flags.DEFINE_string('server_ip', '', help='IP of rank 0 server.')
 flags.DEFINE_integer('server_port', 0, help='port of rank 0 server.')
 flags.DEFINE_integer('num_hosts', 1, help='number of nodes in GPU cluster.')
 flags.DEFINE_integer('host_idx', 0, help='index of current node.')
-flags.DEFINE_string('dataset', '')
+flags.DEFINE_string('dataset', '', help='path to data')
 # Flags --jax_backend_target and --jax_xla_backend are available through JAX.
 
 def _reset_backend_state():
