@@ -1,5 +1,6 @@
 ## prepare the env
 ```
+refer to https://gist.github.com/hungntt/836a3862dbe09dd643758ecbcbec043f for installing cuda
 source prepare.sh
 pip install --upgrade jax==0.2.17 jaxlib==0.1.65+cuda110 -f https://storage.googleapis.com/jax-releases/jax_releases.html
 pip install -r vit_jax/requirements.txt

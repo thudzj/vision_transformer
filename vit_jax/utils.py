@@ -156,7 +156,7 @@ def cutmix_bbox_and_lam(img_shape, lam, rng, correct_lam=True, count=None):
     return (yl, yu, xl, xu), lam
 
 
-def array_of_a_number(n, h, w):
+def array_of_a_number(n, h, w, c=0):
   if n == 0:
     ret = onp.array([[0, 0, 0, 0, 0, 0, 0],
                      [0, 1, 1, 1, 1, 1, 0],
@@ -323,14 +323,17 @@ def array_of_a_number(n, h, w):
   img = img.resize(size=(w, h))
   ret = onp.array(img)
   ret = onp.tile(ret[:, :, None], (1, 1, 3))
+  for i in range(3):
+    if i != c:
+      ret[:, :, i] = 0
   return ret
 
 def pos2img(pos, ncol, h, w):
   row = pos // ncol
   col = pos % ncol
 
-  ret = onp.concatenate([array_of_a_number(row, h, w//2),
-                         array_of_a_number(col, h, w//2)], 1)
+  ret = onp.concatenate([array_of_a_number(row, h, w//2, 0),
+                         array_of_a_number(col, h, w//2, 1)], 1)
   return ret
 
 # if __name__ == "__main__":

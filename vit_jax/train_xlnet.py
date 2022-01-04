@@ -195,6 +195,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
                                        weight_decay=config.weight_decay, 
                                        half_precision=config.optim_half_precision).create(params)
   initial_step = 1
+
+  # if config.resume:
+  #   opt, initial_step = flax_checkpoints.restore_checkpoint(
+  #       workdir, (opt, initial_step))
+  #   logging.info('Will start/continue training at initial_step=%d', initial_step)
+
   opt_repl = flax.jax_utils.replicate(opt)
 
   if config.model.half_precision and jax.local_devices()[0].platform == 'gpu':
