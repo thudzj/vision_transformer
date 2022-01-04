@@ -5,6 +5,7 @@ source prepare.sh
 pip install --upgrade jax==0.2.17 jaxlib==0.1.65+cuda110 -f https://storage.googleapis.com/jax-releases/jax_releases.html
 pip install -r vit_jax/requirements.txt
 pip install git+https://github.com/deepmind/jmp
+to test: python3 -c "from jax.lib import xla_bridge; print(xla_bridge.get_backend().platform)"
 ```
 
 ## pretrain mae:  
