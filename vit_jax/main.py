@@ -45,6 +45,7 @@ flags.DEFINE_string('server_ip', '', help='IP of rank 0 server.')
 flags.DEFINE_integer('server_port', 0, help='port of rank 0 server.')
 flags.DEFINE_integer('num_hosts', 1, help='number of nodes in GPU cluster.')
 flags.DEFINE_integer('host_idx', 0, help='index of current node.')
+flags.DEFINE_string('dataset', '')
 # Flags --jax_backend_target and --jax_xla_backend are available through JAX.
 
 def _reset_backend_state():
@@ -110,6 +111,9 @@ def main(argv):
   platform.work_unit().create_artifact(platform.ArtifactType.DIRECTORY,
                                        _WORKDIR.value, 'workdir')
 
+  if FLAGS.dataset:
+    FLAGS.config.dataset = FLAGS.dataset
+    
   if FLAGS.config.trainer == 'train':
     train.train_and_evaluate(FLAGS.config, _WORKDIR.value)
   elif FLAGS.config.trainer == 'inference_time':

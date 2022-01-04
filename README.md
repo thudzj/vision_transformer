@@ -1,34 +1,42 @@
 ## prepare the env
 ```
 refer to https://gist.github.com/hungntt/836a3862dbe09dd643758ecbcbec043f for installing cuda
-source prepare.sh
+# source prepare.sh
 pip install --upgrade jax==0.2.17 jaxlib==0.1.65+cuda110 -f https://storage.googleapis.com/jax-releases/jax_releases.html
 pip install -r vit_jax/requirements.txt
 pip install git+https://github.com/deepmind/jmp
 to test: python3 -c "from jax.lib import xla_bridge; print(xla_bridge.get_backend().platform)"
 ```
 
+## to download imagenet
+```
+pip3 install kaggle  
+vim ~/.kaggle/kaggle.json
+chmod 600 ~/.kaggle/kaggle.json
+kaggle competitions download -c imagenet-object-localization-challenge
+```
+
 ## pretrain mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6,7 python -m vit_jax.main --workdir=./mae --config=./vit_jax/configs/mae.py:b16  --config.batch=512 --config.batch_eval=40
+CUDA_VISIBLE_DEVICES=4,5,6,7 python -m vit_jax.main --workdir=./mae --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/mae.py:b16  --config.batch=512 --config.batch_eval=40
 ```
 
 ## finetune mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_mae --config=./vit_jax/configs/ft_mae.py:b16  --config.batch=96 --config.batch_eval=96
+CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_mae --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/ft_mae.py:b16  --config.batch=96 --config.batch_eval=96
 ```
 
 ## pretrain xlnet:  
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet --config=./vit_jax/configs/xlnet.py:b16  --config.batch=896 --config.batch_eval=70
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/xlnet.py:b16  --config.batch=896 --config.batch_eval=70
 ```
 
 type2
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet2 --config=./vit_jax/configs/xlnet2.py:b16  --config.batch=1024 --config.batch_eval=80
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet2 --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/xlnet2.py:b16  --config.batch=1024 --config.batch_eval=80
 ```
 
 ## finetune xlnet:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_xlnet --config=./vit_jax/configs/ft_xlnet.py:b16  --config.batch=96 --config.batch_eval=96
+CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_xlnet --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/ft_xlnet.py:b16 --config.batch=96 --config.batch_eval=96
 ```
