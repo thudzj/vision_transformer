@@ -78,7 +78,7 @@ def get_config(model):
   config = ml_collections.ConfigDict()
   config.trainer = 'finetune'
   
-  config.pretrained_path = None
+  config.pretrained_path = ''
   config.dataset = '/data/LargeData/Large/ImageNet/'
 
   config.weight_decay = 0.05

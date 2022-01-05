@@ -34,7 +34,7 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 python -m vit_jax.main --workdir=./mae --config=./v
 
 ## finetune mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_mae --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./mae --config.batch=96 --config.batch_eval=96
+CUDA_VISIBLE_DEVICES=4,5,6,7 python -m vit_jax.main --workdir=./ft_mae --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./mae --config.batch=256 --config.batch_eval=256
 ```
 
 ## pretrain xlnet:  
