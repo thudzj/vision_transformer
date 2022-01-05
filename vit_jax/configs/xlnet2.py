@@ -31,13 +31,7 @@ def get_b16_config():
   config.encoder.attention_dropout_rate = 0.0
   config.encoder.dropout_rate = 0.0
   config.encoder.drop_path_rate = 0.0
-  config.encoder.two_stream = 10
-
-  config.encoder.g_mlp_dim = 3072
-  config.encoder.g_num_heads = 12
-  config.encoder.g_attention_dropout_rate = 0.0
-  config.encoder.g_dropout_rate = 0.0
-  config.encoder.g_predict_pos = True
+  config.encoder.predict_pos = True
   return config
 
 def get_l16_config():
@@ -55,13 +49,7 @@ def get_l16_config():
   config.encoder.attention_dropout_rate = 0.0
   config.encoder.dropout_rate = 0.0
   config.encoder.drop_path_rate = 0.0
-  config.encoder.two_stream = 10
-
-  config.encoder.g_mlp_dim = 4096
-  config.encoder.g_num_heads = 16
-  config.encoder.g_attention_dropout_rate = 0.0
-  config.encoder.g_dropout_rate = 0.0
-  config.encoder.g_predict_pos = True
+  config.encoder.predict_pos = True
   return config
 
 # def get_h14_config():
@@ -98,17 +86,25 @@ def get_config(model):
   # Path to tensorflow_datasets directory
   # config.tfds_data_dir = None
   # Number of steps; determined by hyper module if not specified.
+  config.fast = True
   config.mask_ratio = 0.75
   config.normlize_target = True
 
   config.weight_decay = 0.05
-  config.base_lr = 1.5e-4
   config.decay_type = 'cosine'
-  config.warmup_epochs = 40
-  config.epochs = 1600
 
-  config.beta1 = 0.9
-  config.beta2 = 0.95
+  if config.fast:
+    config.warmup_epochs = 30
+    config.epochs = 300
+    config.beta1 = 0.9
+    config.beta2 = 0.999
+    config.base_lr = 2e-4
+  else:
+    config.warmup_epochs = 40
+    config.epochs = 1600
+    config.beta1 = 0.9
+    config.beta2 = 0.95
+    config.base_lr = 1.5e-4
 
   # Batch size for training.
   config.batch = 512
@@ -125,7 +121,7 @@ def get_config(model):
 
   # Number of batches to prefetch to device.
   config.prefetch = 2
-  config.flip = False
+  config.flip = True
   config.randaug = None
 
   config.optim_half_precision = False

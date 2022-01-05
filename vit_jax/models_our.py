@@ -127,7 +127,7 @@ class Block(nn.Module):
   drop_path_rate: float = 0.1
 
   @nn.compact
-  def __call__(self, inputs, *, deterministic, mask=None):
+  def __call__(self, inputs, *, deterministic, mask=None, select_KV=None):
     """
     Args:
       inputs: Inputs to the layer.
@@ -147,7 +147,7 @@ class Block(nn.Module):
         deterministic=deterministic,
         dropout_rate=self.attention_dropout_rate,
         num_heads=self.num_heads)(
-            x, x, mask=mask)
+            x, x if select_KV is None else x[:, :select_KV], mask=mask)
     if self.dropout_rate > 0:
       x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=deterministic)
     if self.drop_path_rate > 0:
@@ -163,116 +163,6 @@ class Block(nn.Module):
       y = DropPath(rate=self.drop_path_rate)(y, deterministic=deterministic)
     return x + y
 
-
-class Block2S(nn.Module):
-  mlp_dim: int
-  num_heads: int
-  g_mlp_dim: int
-  g_num_heads: int
-
-  dtype: Dtype = jnp.float32
-  drop_path_rate: float = 0.1
-
-  dropout_rate: float = 0.1
-  attention_dropout_rate: float = 0.1
-  
-  g_dropout_rate: float = 0.1
-  g_attention_dropout_rate: float = 0.1
-
-  @nn.compact
-  def __call__(self, inputs, g_inputs, m1, m2, *, deterministic):
-    assert inputs.ndim == 3, f'Expected (batch, seq, hidden) got {inputs.shape}'
-    assert g_inputs.ndim == 3, f'Expected (batch, seq, hidden) got {g_inputs.shape}'
-
-    g = nn.LayerNorm(dtype=self.dtype, name='two_stream_ln1')(g_inputs)
-    x = nn.LayerNorm(dtype=self.dtype)(inputs)
-    
-    g = nn.MultiHeadDotProductAttention(
-        dtype=self.dtype,
-        kernel_init=nn.initializers.xavier_uniform(),
-        broadcast_dropout=False,
-        deterministic=deterministic,
-        dropout_rate=self.g_attention_dropout_rate,
-        num_heads=self.g_num_heads,
-        name='two_stream_attn')(
-            g, x, mask=m2)
-
-    if self.g_dropout_rate > 0:
-      g = nn.Dropout(rate=self.g_dropout_rate)(g, deterministic=deterministic)
-    if self.drop_path_rate > 0:
-      g = DropPath(rate=self.drop_path_rate)(g, deterministic=deterministic)
-    g = g + g_inputs
-
-    h = nn.LayerNorm(dtype=self.dtype, name='two_stream_ln2')(g)
-    h = MlpBlock(
-        mlp_dim=self.g_mlp_dim, dtype=self.dtype, 
-        dropout_rate=self.g_dropout_rate, name='two_stream_mlp')(
-            h, deterministic=deterministic)
-    if self.drop_path_rate > 0:
-      h = DropPath(rate=self.drop_path_rate)(h, deterministic=deterministic)
-
-
-    x = nn.MultiHeadDotProductAttention(
-        dtype=self.dtype,
-        kernel_init=nn.initializers.xavier_uniform(),
-        broadcast_dropout=False,
-        deterministic=deterministic,
-        dropout_rate=self.attention_dropout_rate,
-        num_heads=self.num_heads)(
-            x, x, mask=m1)
-    if self.dropout_rate > 0:
-      x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=deterministic)
-    if self.drop_path_rate > 0:
-      x = DropPath(rate=self.drop_path_rate)(x, deterministic=deterministic)
-    x = x + inputs
-
-    y = nn.LayerNorm(dtype=self.dtype)(x)
-    y = MlpBlock(
-        mlp_dim=self.mlp_dim, dtype=self.dtype, dropout_rate=self.dropout_rate)(
-            y, deterministic=deterministic)
-    if self.drop_path_rate > 0:
-      y = DropPath(rate=self.drop_path_rate)(y, deterministic=deterministic)
-    return x + y, g + h
-
-class LastBlock2S(nn.Module):
-  mlp_dim: int
-  num_heads: int
-  dtype: Dtype = jnp.float32
-  dropout_rate: float = 0.1
-  attention_dropout_rate: float = 0.1
-  drop_path_rate: float = 0.1
-
-  @nn.compact
-  def __call__(self, x, g_inputs, m2, *, deterministic):
-    assert x.ndim == 3, f'Expected (batch, seq, hidden) got {x.shape}'
-    assert g_inputs.ndim == 3, f'Expected (batch, seq, hidden) got {g_inputs.shape}'
-
-    g = nn.LayerNorm(dtype=self.dtype, name='two_stream_ln1')(g_inputs)
-    g = nn.MultiHeadDotProductAttention(
-        dtype=self.dtype,
-        kernel_init=nn.initializers.xavier_uniform(),
-        broadcast_dropout=False,
-        deterministic=deterministic,
-        dropout_rate=self.attention_dropout_rate,
-        num_heads=self.num_heads,
-        name='two_stream_attn')(
-            g, x,  mask=m2)
-    if self.dropout_rate > 0:
-      g = nn.Dropout(rate=self.dropout_rate)(g, deterministic=deterministic)
-    if self.drop_path_rate > 0:
-      g = DropPath(rate=self.drop_path_rate)(g, deterministic=deterministic)
-    g = g + g_inputs
-
-    h = nn.LayerNorm(dtype=self.dtype, name='two_stream_ln2')(g)
-    h = MlpBlock(
-        mlp_dim=self.mlp_dim, dtype=self.dtype, 
-        dropout_rate=self.dropout_rate, name='two_stream_mlp')(
-            h, deterministic=deterministic)
-    if self.drop_path_rate > 0:
-      h = DropPath(rate=self.drop_path_rate)(h, deterministic=deterministic)
-    return g + h
-
-
 class Encoder(nn.Module):
 
   patches: Any
@@ -285,12 +175,8 @@ class Encoder(nn.Module):
   attention_dropout_rate: float = 0.1
   drop_path_rate: float = 0.1
   classifier: str = None
-  two_stream: int = int(1e8)
-  g_predict_pos: bool = False
-  g_mlp_dim: int = None
-  g_num_heads: int = None
-  g_dropout_rate: float = None
-  g_attention_dropout_rate: float = None
+  for_xlnet: bool = False
+  predict_pos: bool = False
   dtype: Any = jnp.float32
 
   @nn.compact
@@ -321,7 +207,7 @@ class Encoder(nn.Module):
       x = nn.Dropout(rate=self.dropout_rate)(x, deterministic=not train)
 
     dpr = onp.linspace(0, self.drop_path_rate, self.num_layers)
-    if self.two_stream > self.num_layers:
+    if not self.for_xlnet:
       if self.num_mask:
         assert masks is not None
         x = jnp.take_along_axis(x, jnp.expand_dims(masks[:, :-self.num_mask], -1), 1)
@@ -340,30 +226,32 @@ class Encoder(nn.Module):
       return encoded
     else:
       assert masks is not None
-
       if num_target is None:
         num_target = self.num_mask
         x = jnp.take_along_axis(x, jnp.expand_dims(masks, -1), 1)
-        if self.g_predict_pos:
+        if self.predict_pos:
           g = jnp.take_along_axis(x_, jnp.expand_dims(masks[:, -self.num_mask:], -1), 1)
         else:
-          g = self.param('two_stream_g', nn.initializers.normal(stddev=0.02), (1, 1, c))
+          g = self.param('extra_g', nn.initializers.normal(stddev=0.02), (1, 1, c))
           g = jnp.take_along_axis(g + pe, jnp.expand_dims(masks[:, -self.num_mask:], -1), 1)
       else:
         x = jnp.take_along_axis(x, jnp.expand_dims(masks[:, :num_target-self.num_mask], -1), 1)
-        if self.g_predict_pos:
+        if self.predict_pos:
           g = jnp.take_along_axis(x_, jnp.expand_dims(masks[:, -self.num_mask:num_target-self.num_mask], -1), 1)
         else:
-          g = self.param('two_stream_g', nn.initializers.normal(stddev=0.02), (1, 1, c))
+          g = self.param('extra_g', nn.initializers.normal(stddev=0.02), (1, 1, c))
           g = jnp.take_along_axis(g + pe, jnp.expand_dims(masks[:, -self.num_mask:num_target-self.num_mask], -1), 1)
 
       m1 = jnp.concatenate([jnp.zeros((x.shape[1] - num_target, num_target)), 
-                            jnp.tril(jnp.ones((num_target, num_target)))], axis=0)
-      m1 = jnp.concatenate([jnp.ones((x.shape[1], x.shape[1] - num_target)), m1], axis=1)
+                            jnp.tril(jnp.ones((num_target, num_target))),
+                            jnp.tril(jnp.ones((num_target, num_target)), k=-1)], 
+                           axis=0)
+      m1 = jnp.concatenate([jnp.ones((x.shape[1] + num_target, x.shape[1] - num_target)), m1], axis=1)
       m1 = jnp.expand_dims(jnp.expand_dims(m1.astype(bool), 0), 0)
 
-      for lyr in range(self.two_stream):
-        x = Block(
+      x_g = jnp.concatenate([x, g], axis=1)
+      for lyr in range(self.num_layers):
+        x_g = Block(
             mlp_dim=self.mlp_dim,
             dropout_rate=self.dropout_rate,
             attention_dropout_rate=self.attention_dropout_rate,
@@ -371,41 +259,10 @@ class Encoder(nn.Module):
             name=f'encoderblock_{lyr}',
             num_heads=self.num_heads, 
             dtype=self.dtype)(
-                x, mask=m1, deterministic=not train)
-
-      m2 = jnp.tril(jnp.ones((num_target, num_target)), k=-1)
-      m2 = jnp.concatenate([jnp.ones((num_target, x.shape[1] - num_target)), m2], axis=1)
-      m2 = jnp.expand_dims(jnp.expand_dims(m2.astype(bool), 0), 0)
-
-      for lyr in range(self.two_stream, self.num_layers):
-        x, g = Block2S(
-            mlp_dim=self.mlp_dim,
-            dropout_rate=self.dropout_rate,
-            attention_dropout_rate=self.attention_dropout_rate,
-            num_heads=self.num_heads,
-            g_mlp_dim=self.g_mlp_dim,
-            g_dropout_rate=self.g_dropout_rate,
-            g_attention_dropout_rate=self.g_attention_dropout_rate,
-            g_num_heads=self.g_num_heads,
-            drop_path_rate=dpr[lyr],
-            name=f'encoderblock_{lyr}',
-            dtype=self.dtype)(
-                x, g, m1, m2, deterministic=not train)
-
-      encoded = nn.LayerNorm(name='encoder_norm', dtype=self.dtype)(x)
-
-      g = LastBlock2S(
-            mlp_dim=self.g_mlp_dim,
-            dropout_rate=self.g_dropout_rate,
-            attention_dropout_rate=self.g_attention_dropout_rate,
-            drop_path_rate=0,
-            name=f'encoderblock_{self.num_layers}',
-            num_heads=self.g_num_heads,
-            dtype=self.dtype)(
-                encoded, g, m2, deterministic=not train)
-      g_encoded = nn.LayerNorm(name='two_stream_lastln', dtype=self.dtype)(g)
-      return g_encoded
-    
+                x_g, mask=m1, select_KV=x.shape[1], deterministic=not train)
+      g = x_g[:, x.shape[1]:]
+      encoded = nn.LayerNorm(name='encoder_norm', dtype=self.dtype)(g)
+      return encoded
 
 class Decoder(nn.Module):
 
@@ -505,7 +362,7 @@ class XLNet(nn.Module):
         dtype = jnp.float32
 
     g = Encoder(name='Encoder', num_mask=self.num_mask, 
-                dtype=dtype, **self.encoder)(
+                dtype=dtype, **self.encoder, for_xlnet=True)(
                     inputs, masks=masks, train=train, num_target=num_target)
     g = nn.Dense(
         name='out',

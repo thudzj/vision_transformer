@@ -29,27 +29,27 @@ python3 in_val_process.py
 
 ## pretrain mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6,7 python -m vit_jax.main --workdir=./mae --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/mae.py:b16  --config.batch=512 --config.batch_eval=40
+CUDA_VISIBLE_DEVICES=4,5,6,7 python -m vit_jax.main --workdir=./mae --config=./vit_jax/configs/mae.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.batch=512 --config.batch_eval=40
 ```
 
 ## finetune mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_mae --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/ft_mae.py:b16  --config.batch=96 --config.batch_eval=96
+CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_mae --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./mae --config.batch=96 --config.batch_eval=96
 ```
 
 ## pretrain xlnet:  
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/xlnet.py:b16  --config.batch=896 --config.batch_eval=70
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet --config=./vit_jax/configs/xlnet.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.batch=672 --config.batch_eval=70
 ```
 
 type2
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet2 --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/xlnet2.py:b16  --config.batch=1024 --config.batch_eval=80
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet2 --config=./vit_jax/configs/xlnet2.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.batch=768 --config.batch_eval=80
 
-on AWS: XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python3 -m vit_jax.main --workdir=./xlnet2 --dataset=/home/ubuntu/ILSVRC/Data/CLS-LOC/ --config=./vit_jax/configs/xlnet2.py:b16  --config.batch=1536 --config.batch_eval=80
+on AWS: XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python3 -m vit_jax.main --workdir=./xlnet2 --config=./vit_jax/configs/xlnet2.py:b16 --config.dataset=/home/ubuntu/ILSVRC/Data/CLS-LOC/  --config.batch=1536 --config.batch_eval=80
 ```
 
 ## finetune xlnet:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_xlnet --dataset=/data/LargeData/Large/ImageNet/ --config=./vit_jax/configs/ft_xlnet.py:b16 --config.batch=96 --config.batch_eval=96
+CUDA_VISIBLE_DEVICES=4,5,6 python -m vit_jax.main --workdir=./ft_xlnet --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./xlnet --config.batch=96 --config.batch_eval=96
 ```

@@ -175,7 +175,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       flat_dict = flax.traverse_util.flatten_dict(encoder_params, keep_empty_nodes=True)
       new_dict = {}
       for key, value in flax.traverse_util._sorted_items(flat_dict):
-        if 'two_stream' not in '/'.join(key):
+        if 'extra' not in '/'.join(key):
           new_dict[key] = value
       encoder_params = flax.traverse_util.unflatten_dict(new_dict)
       params = {'Encoder': encoder_params, 

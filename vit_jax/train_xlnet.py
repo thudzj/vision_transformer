@@ -186,7 +186,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       num_mask=config.num_mask, 
       num_target=config.num_target,
       lr_fn=lr_fn,
-      predict_pos=config.model.encoder.g_predict_pos,
+      predict_pos=config.model.encoder.predict_pos,
       sigma2=config.sigma2)
   infer_fn_repl = jax.pmap(functools.partial(model.apply, train=False))
 
@@ -267,7 +267,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
     # Run evaluation
     if ((config.eval_every and step % config.eval_every == 0) or
         (step == total_steps)):
-      if config.model.encoder.g_predict_pos:
+      if config.model.encoder.predict_pos:
         test_batch = next(iter(ds_test))
         images = np.asarray(memoryview(test_batch['image']), test_batch['image'].dtype.name)
         masks = np.asarray(memoryview(test_batch['label']), test_batch['label'].dtype.name)
