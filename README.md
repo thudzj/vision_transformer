@@ -46,9 +46,9 @@ CUDA_VISIBLE_DEVICES=0,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet-mask19
 
 type2
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet2 --config=./vit_jax/configs/xlnet2.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.batch=768 --config.batch_eval=80
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet2 --config=./vit_jax/configs/xlnet.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.encoder.predict_pos=True --config.out_dim=196 --config.sigma2=0.2 --config.batch=768 --config.batch_eval=80
 
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet2-mask195 --config=./vit_jax/configs/xlnet2.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.batch=672 --config.batch_eval=70 --config.num_mask=195
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet2-mask195 --config=./vit_jax/configs/xlnet.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.encoder.predict_pos=True --config.out_dim=196 --config.sigma2=0.2 --config.batch=672 --config.batch_eval=70 --config.num_mask=195
 ```
 
 ## finetune xlnet:  

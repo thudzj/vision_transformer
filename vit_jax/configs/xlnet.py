@@ -87,7 +87,6 @@ def get_config(model):
   # config.tfds_data_dir = None
   # Number of steps; determined by hyper module if not specified.
   config.fast = True
-  config.mask_ratio = 0.75
   config.normlize_target = True
 
   config.weight_decay = 0.05
@@ -127,8 +126,6 @@ def get_config(model):
   config.optim_half_precision = False
   config.dynamic_scale = True
 
-  config.target_ratio = 0.25
-
   # Base learning-rate for fine-tuning.
   # config.base_lr = 0.03
   # How to decay the learning rate ("cosine" or "linear").
@@ -143,12 +140,14 @@ def get_config(model):
 
   get_model_config = eval(f'get_{model}_config')
   config.model = get_model_config()
-  config.out_dim = 768
-  config.sigma2 = None
 
   config.patch_size = config.model.encoder.patches['size'][0]
   config.num_patches = (config.pp['crop'] // config.model.encoder.patches['size'][0])**2
-  config.num_mask = int(config.num_patches * config.mask_ratio)
-  config.num_target = int(config.num_patches * config.target_ratio)
+  config.num_mask = int(config.num_patches * 0.75)
+  config.num_target = int(config.num_patches * 0.25)
+
+  config.out_dim = 768
+  config.sigma2 = None
+  config.grad_norm = 0
 
   return config.lock()

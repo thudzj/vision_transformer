@@ -61,7 +61,7 @@ def preprocess(batch, normlize_target, patch_size, num_mask, num_target):
   return images, masks, labels
 
 def make_update_fn(*, apply_fn, normlize_target, patch_size, num_patches, num_mask, 
-                   num_target, lr_fn, predict_pos=False, sigma2=None):
+                   num_target, lr_fn, grad_norm, predict_pos=False, sigma2=None):
   """Returns update step for data parallel training."""
 
   def update_fn(opt, loss_scale, step, batch, rng):
@@ -117,7 +117,12 @@ def make_update_fn(*, apply_fn, normlize_target, patch_size, num_patches, num_ma
     # We compute our optimizer update in the same precision as params, even when
     # doing mixed precision training.
     g = policy.cast_to_param(g)
-    
+
+    if grad_norm != 0:
+      grads_l2 = jnp.sqrt(sum([jnp.vdot(g_, g_) for g_ in jax.tree_flatten(g)[0]]))
+      grads_factor = jnp.minimum(1.0, grad_norm / grads_l2)
+      g = jax.tree_map(lambda g_: grads_factor * g_, g)
+
     hyper_params = opt.optimizer_def.update_hyper_params(learning_rate=lr_fn(step))
     new_target, new_state = opt.optimizer_def.apply_gradient(
         hyper_params, opt.target, opt.state, g)
@@ -186,6 +191,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       num_mask=config.num_mask, 
       num_target=config.num_target,
       lr_fn=lr_fn,
+      grad_norm=config.grad_norm,
       predict_pos=config.model.encoder.predict_pos,
       sigma2=config.sigma2)
   infer_fn_repl = jax.pmap(functools.partial(model.apply, train=False))
