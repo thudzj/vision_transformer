@@ -137,7 +137,7 @@ def get_config(model):
   config.randaug = None
 
   config.optim_half_precision = False
-  config.dynamic_scale = False
+  config.dynamic_scale = True
 
   # Base learning-rate for fine-tuning.
   # config.base_lr = 0.03
