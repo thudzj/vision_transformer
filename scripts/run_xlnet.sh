@@ -12,5 +12,6 @@ module load nvidia/cuda/11.4
 
 source /apps/local/conda_init.sh
 conda activate hao_vit
+rm -rf /l/users/hongyiwa/hao/vision_transformer/xlnet
 
-XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda python3 -m vit_jax.main --workdir=/l/users/hongyiwa/hao/vision_transformer/xlnet --config=/l/users/hongyiwa/hao/vision_transformer/vit_jax/configs/xlnet.py:b16 --config.dataset=/l/users/hongyiwa/datasets/ILSVRC2012  --config.batch=1024 --config.batch_eval=40
+XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda python3 -m vit_jax.main --workdir=/l/users/hongyiwa/hao/vision_transformer/xlnet --config=/l/users/hongyiwa/hao/vision_transformer/vit_jax/configs/xlnet.py:b16 --config.dataset=/l/users/hongyiwa/datasets/ILSVRC2012  --config.batch=1024 --config.batch_eval=40 --config.grad_norm=1
