@@ -53,9 +53,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet2-mas
 
 ## finetune xlnet(2):  
 ```
-XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python3 -m vit_jax.main --workdir=./ft_xlnet2 --config=./vit_jax/configs/ft.py:b16 --config.dataset=/home/ubuntu/ILSVRC/Data/CLS-LOC/ --config.pretrained_path=./xlnet2/checkpoint_500400 --config.batch=1024 --config.batch_eval=1024
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./ft_xlnet2 --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./xlnet2 --config.batch=512 --config.batch_eval=512
 
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./ft_xlnet2-mask195 --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./xlnet2-mask195 --config.batch=512 --config.batch_eval=512
+XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python3 -m vit_jax.main --workdir=./ft_xlnet2-mask195 --config=./vit_jax/configs/ft.py:b16 --config.dataset=/home/ubuntu/ILSVRC/Data/CLS-LOC/ --config.pretrained_path=./xlnet2-mask195 --config.batch=1024 --config.batch_eval=1024
 ```
 
 
