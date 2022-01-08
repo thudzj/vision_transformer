@@ -14,4 +14,4 @@ source /apps/local/conda_init.sh
 conda activate hao_vit
 rm -rf /l/users/hongyiwa/hao/vision_transformer/xlnet2
 
-XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda python3 -m vit_jax.main --workdir=/l/users/hongyiwa/hao/vision_transformer/xlnet2 --config=/l/users/hongyiwa/hao/vision_transformer/vit_jax/configs/xlnet.py:b16 --config.dataset=/l/users/hongyiwa/datasets/ILSVRC2012 --config.encoder.predict_pos=True --config.out_dim=196 --config.sigma2=0.2 --config.batch=1024 --config.batch_eval=40 --config.grad_norm=1
+XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda python3 -m vit_jax.main --workdir=/l/users/hongyiwa/hao/vision_transformer/xlnet2 --config=/l/users/hongyiwa/hao/vision_transformer/vit_jax/configs/xlnet.py:b16 --config.dataset=/l/users/hongyiwa/datasets/ILSVRC2012 --config.model.encoder.predict_pos=True --config.out_dim=196 --config.sigma2=0.2 --config.batch=1024 --config.batch_eval=40 --config.grad_norm=1

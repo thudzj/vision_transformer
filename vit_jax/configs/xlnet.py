@@ -147,7 +147,7 @@ def get_config(model):
   config.num_target = int(config.num_patches * 0.25)
 
   config.out_dim = 768
-  config.sigma2 = 0
-  config.grad_norm = 0
+  config.sigma2 = 0.
+  config.grad_norm = 0.
 
   return config.lock()
