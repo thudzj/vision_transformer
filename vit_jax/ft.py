@@ -44,7 +44,7 @@ def _filter(patterns, x, _):
   return False
 
 def make_update_fn(*, apply_fn, lr_fn, label_smoothing, mix_prob, switch_prob, 
-                   mixup, cutmix, lr_multipliers):
+                   mixup, cutmix, lr_multipliers, grad_norm):
   """Returns update step for data parallel training."""
 
   def update_fn(opt, loss_scale, step, batch, rng):
@@ -118,6 +118,11 @@ def make_update_fn(*, apply_fn, lr_fn, label_smoothing, mix_prob, switch_prob,
     # We compute our optimizer update in the same precision as params, even when
     # doing mixed precision training.
     g = policy.cast_to_param(g)
+
+    if grad_norm != 0:
+      grads_l2 = jnp.sqrt(sum([jnp.vdot(g_, g_) for g_ in jax.tree_flatten(g)[0]]))
+      grads_factor = jnp.minimum(1.0, grad_norm / grads_l2)
+      g = jax.tree_map(lambda g_: grads_factor * g_, g)
 
     old_target, old_state = opt.target, opt.state
     hyper_params = [item.replace(learning_rate=lr_fn(step) * lr_multipliers[i]) 
@@ -202,7 +207,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       switch_prob=config.switch_prob,
       mixup=config.mixup,
       cutmix=config.cutmix,
-      lr_multipliers=lr_multipliers)
+      lr_multipliers=lr_multipliers,
+      grad_norm=config.grad_norm)
   infer_fn_repl = jax.pmap(functools.partial(model.apply, train=False))
 
   # # Create optimizer and replicate it over all TPUs/GPUs

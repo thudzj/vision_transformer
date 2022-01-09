@@ -136,5 +136,6 @@ def get_config(model):
 
   config.patch_size = config.model.encoder.patches['size'][0]
   config.num_patches = (config.pp['crop'] // config.model.encoder.patches['size'][0])**2
+  config.grad_norm = 0.
 
   return config.lock()
