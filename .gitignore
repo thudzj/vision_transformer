@@ -3,3 +3,4 @@ cuda
 __pycache__/
 /.vscode
 /.env
+/logs
