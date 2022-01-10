@@ -31,4 +31,6 @@ class RandomMaskingGenerator:
             np.ones(self.num_mask),
         ])
         np.random.shuffle(mask)
-        return mask # [196]
+        target_indices = mask.nonzero()[0]
+        np.random.shuffle(target_indices)
+        return mask, target_indices# [196]

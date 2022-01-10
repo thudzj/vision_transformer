@@ -15,13 +15,16 @@ import torch.backends.cudnn as cudnn
 import json
 import os
 
+from clu import metric_writers
+from clu import periodic_actions
+
 from pathlib import Path
 
 from timm.models import create_model
 from optim_factory import create_optimizer
 
-from datasets import build_pretraining_dataset
-from engine_for_pretraining import train_one_epoch
+from datasets import build_pretraining_dataset, build_pretraining_val_dataset
+from engine_for_pretraining import train_one_epoch, plot_evaluation_results
 from utils import NativeScalerWithGradNormCount as NativeScaler
 import utils
 import modeling_pretrain
@@ -30,6 +33,7 @@ import modeling_pretrain
 def get_args():
     parser = argparse.ArgumentParser('MAE pre-training script', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int)
+    parser.add_argument('--batch_size_val', default=8, type=int)
     parser.add_argument('--epochs', default=300, type=int)
     parser.add_argument('--save_ckpt_freq', default=20, type=int)
 
@@ -45,9 +49,18 @@ def get_args():
 
     parser.add_argument('--drop_path', type=float, default=0.0, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
-                        
+
     parser.add_argument('--normlize_target', default=True, type=bool,
                         help='normalized the target patch pixels')
+
+    parser.add_argument('--num_targets', default=None, type=int,
+                        help='number of the visual tokens/patches to predict')
+
+    parser.add_argument('--pred_pos', default=False, action='store_true',
+                        help='to predict position')
+
+    parser.add_argument('--pred_pos_smoothing', default=0., type=float,
+                        help='label smoothing for predicting position')
 
     # Optimizer parameters
     parser.add_argument('--opt', default='adamw', type=str, metavar='OPTIMIZER',
@@ -63,7 +76,7 @@ def get_args():
     parser.add_argument('--weight_decay', type=float, default=0.05,
                         help='weight decay (default: 0.05)')
     parser.add_argument('--weight_decay_end', type=float, default=None, help="""Final value of the
-        weight decay. We use a cosine schedule for WD. 
+        weight decay. We use a cosine schedule for WD.
         (Set the same value with args.weight_decay to keep weight decay no change)""")
 
     parser.add_argument('--lr', type=float, default=1.5e-4, metavar='LR',
@@ -80,19 +93,17 @@ def get_args():
 
     # Augmentation parameters
     parser.add_argument('--color_jitter', type=float, default=0.0, metavar='PCT',
-                        help='Color jitter factor (default: 0.4)')
+                        help='Color jitter factor (default: 0.0)')
     parser.add_argument('--train_interpolation', type=str, default='bicubic',
                         help='Training interpolation (random, bilinear, bicubic default: "bicubic")')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/train', type=str,
+    parser.add_argument('--data_path', default=None, type=str,
                         help='dataset path')
     parser.add_argument('--imagenet_default_mean_and_std', default=True, action='store_true')
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default=None,
-                        help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -122,12 +133,21 @@ def get_args():
 
 def get_model(args):
     print(f"Creating model: {args.model}")
-    model = create_model(
-        args.model,
-        pretrained=False,
-        drop_path_rate=args.drop_path,
-        drop_block_rate=None,
-    )
+    if 'xlnet' in args.model:
+        model = create_model(
+            args.model,
+            pretrained=False,
+            drop_path_rate=args.drop_path,
+            drop_block_rate=None,
+            pred_pos=args.pred_pos,
+        )
+    else:
+        model = create_model(
+            args.model,
+            pretrained=False,
+            drop_path_rate=args.drop_path,
+            drop_block_rate=None,
+        )
 
     return model
 
@@ -155,6 +175,7 @@ def main(args):
 
     # get dataset
     dataset_train = build_pretraining_dataset(args)
+    dataset_val = build_pretraining_val_dataset(args)
 
     if True:  # args.distributed:
         num_tasks = utils.get_world_size()
@@ -169,11 +190,17 @@ def main(args):
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
-    if global_rank == 0 and args.log_dir is not None:
-        os.makedirs(args.log_dir, exist_ok=True)
-        log_writer = utils.TensorboardLogger(log_dir=args.log_dir)
+    if global_rank == 0:
+        log_writer = metric_writers.create_default_writer(args.output_dir, asynchronous=False)
+        # hooks = [
+        #     periodic_actions.Profile(logdir=args.output_dir),
+        #     periodic_actions.ReportProgress(
+        #          num_train_steps=(args.epochs - args.start_epoch) * num_training_steps_per_epoch, writer=log_writer),
+        # ]
+        hooks = None
     else:
         log_writer = None
+        hooks = None
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, sampler=sampler_train,
@@ -182,6 +209,14 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=True,
         worker_init_fn=utils.seed_worker
+    )
+
+    data_loader_val = torch.utils.data.DataLoader(
+        dataset_val, sampler=None, shuffle=True,
+        batch_size=args.batch_size_val,
+        num_workers=args.num_workers,
+        pin_memory=False,
+        drop_last=True,
     )
 
     model.to(device)
@@ -223,21 +258,27 @@ def main(args):
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
+
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
-        if log_writer is not None:
-            log_writer.set_step(epoch * num_training_steps_per_epoch)
         train_stats = train_one_epoch(
             model, data_loader_train,
             optimizer, device, epoch, loss_scaler,
-            args.clip_grad, log_writer=log_writer,
+            args.clip_grad, args.window_size, patch_size[0],
+            normlize_target=args.normlize_target,
+            num_targets=args.num_targets,
+            pred_pos=args.pred_pos,
+            pred_pos_smoothing=args.pred_pos_smoothing,
+            log_writer=log_writer, hooks=hooks,
             start_steps=epoch * num_training_steps_per_epoch,
             lr_schedule_values=lr_schedule_values,
             wd_schedule_values=wd_schedule_values,
-            patch_size=patch_size[0],
-            normlize_target=args.normlize_target,
         )
+
+        plot_evaluation_results(model, data_loader_val, device, epoch, args.pred_pos,
+                                patch_size, args.window_size, log_writer)
+
         if args.output_dir:
             if (epoch + 1) % args.save_ckpt_freq == 0 or epoch + 1 == args.epochs:
                 utils.save_model(
@@ -248,8 +289,6 @@ def main(args):
                      'epoch': epoch, 'n_parameters': n_parameters}
 
         if args.output_dir and utils.is_main_process():
-            if log_writer is not None:
-                log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 

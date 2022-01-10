@@ -20,25 +20,41 @@ from dataset_folder import ImageFolder
 
 
 class DataAugmentationForMAE(object):
-    def __init__(self, args):
+    def __init__(self, args, for_val=False):
         imagenet_default_mean_and_std = args.imagenet_default_mean_and_std
         mean = IMAGENET_INCEPTION_MEAN if not imagenet_default_mean_and_std else IMAGENET_DEFAULT_MEAN
         std = IMAGENET_INCEPTION_STD if not imagenet_default_mean_and_std else IMAGENET_DEFAULT_STD
 
-        self.transform = transforms.Compose([
-            transforms.RandomResizedCrop(args.input_size),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=torch.tensor(mean),
-                std=torch.tensor(std))
-        ])
+        if for_val:
+            if args.input_size < 384:
+                crop_pct = 224. / 256.
+            else:
+                crop_pct = 1.0
+            size = int(args.input_size / crop_pct)
+            self.transform = transforms.Compose([
+                transforms.Resize(size, interpolation=3),
+                transforms.CenterCrop(args.input_size),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=torch.tensor(mean),
+                    std=torch.tensor(std))
+            ])
+        else:
+            self.transform = transforms.Compose([
+                transforms.RandomResizedCrop(args.input_size),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=torch.tensor(mean),
+                    std=torch.tensor(std))
+            ])
 
         self.masked_position_generator = RandomMaskingGenerator(
             args.window_size, args.mask_ratio
         )
 
     def __call__(self, image):
-        return self.transform(image), self.masked_position_generator()
+        mask, target_indices = self.masked_position_generator()
+        return self.transform(image), mask, target_indices
 
     def __repr__(self):
         repr = "(DataAugmentationForBEiT,\n"
@@ -53,6 +69,10 @@ def build_pretraining_dataset(args):
     print("Data Aug = %s" % str(transform))
     return ImageFolder(args.data_path, transform=transform)
 
+def build_pretraining_val_dataset(args):
+    transform = DataAugmentationForMAE(args, for_val=True)
+    print("Data Aug = %s" % str(transform))
+    return ImageFolder(args.data_path.replace('train', 'val'), transform=transform)
 
 def build_dataset(is_train, args):
     transform = build_transform(is_train, args)

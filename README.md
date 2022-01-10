@@ -2,7 +2,7 @@
 ```
 refer to https://gist.github.com/hungntt/836a3862dbe09dd643758ecbcbec043f for installing cuda
 wget https://repo.anaconda.com/archive/Anaconda3-2021.11-Linux-x86_64.sh
-bash Anaconda3-2021.11-Linux-x86_64.sh 
+bash Anaconda3-2021.11-Linux-x86_64.sh
 eval "$(/home/ubuntu/anaconda3/bin/conda shell.bash hook)"
 conda init
 conda config --set auto_activate_base false
@@ -10,10 +10,6 @@ conda install cudatoolkit=11.1 cudnn -c pytorch -c conda-forge
 sudo ln -s  /usr/local/cuda-11.1/lib64/libcupti.so.11.1 /usr/local/cuda-11.1/lib64/libcupti.so.11.0
 
 # source prepare.sh
-pip install --upgrade jax==0.2.17 jaxlib==0.1.65+cuda110 -f https://storage.googleapis.com/jax-releases/jax_releases.html
-pip install -r vit_jax/requirements.txt
-pip install git+https://github.com/deepmind/jmp
-to test: python3 -c "from jax.lib import xla_bridge; print(xla_bridge.get_backend().platform)"
 ```
 
 ## to download imagenet
@@ -22,45 +18,45 @@ pip3 install kaggle
 vim ~/.kaggle/kaggle.json
 chmod 600 ~/.kaggle/kaggle.json
 kaggle competitions download -c imagenet-object-localization-challenge
-unzip imagenet-object-localization-challenge.zip 
-tar -xvzf imagenet_object_localization_patched2019.tar.gz 
+unzip imagenet-object-localization-challenge.zip
+tar -xvzf imagenet_object_localization_patched2019.tar.gz
 python3 in_val_process.py
 ```
 
 ## pretrain mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6,7 python -m vit_jax.main --workdir=./mae --config=./vit_jax/configs/mae.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.batch=512 --config.batch_eval=40
+python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --mask_ratio 0.75 --model pretrain_mae_base_patch16_224 --batch_size 16 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_mae_base_patch16_224
 ```
 
 ## finetune mae:  
 ```
-CUDA_VISIBLE_DEVICES=4,5,6,7 python -m vit_jax.main --workdir=./ft_mae --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./mae --config.batch=256 --config.batch_eval=256
+python -m torch.distributed.launch --nproc_per_node=8 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_mae_base_patch16_224/checkpoint.pth --output_dir logs/ft_mae_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
 ```
 
 ## pretrain xlnet:  
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet --config=./vit_jax/configs/xlnet.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/  --config.batch=768 --config.batch_eval=80
+python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49
 
-CUDA_VISIBLE_DEVICES=0,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet-mask195 --config=./vit_jax/configs/xlnet.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.batch=576 --config.batch_eval=60 --config.num_mask=195
+python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
 ```
 
-type2
+## finetune xlnet:  
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./xlnet2 --config=./vit_jax/configs/xlnet.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.encoder.predict_pos=True --config.out_dim=196 --config.sigma2=0.2 --config.batch=768 --config.batch_eval=80
+python -m torch.distributed.launch --nproc_per_node=8 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
 
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./xlnet2-mask195 --config=./vit_jax/configs/xlnet.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.encoder.predict_pos=True --config.out_dim=196 --config.sigma2=0.2 --config.batch=672 --config.batch_eval=70 --config.num_mask=195
+python -m torch.distributed.launch --nproc_per_node=8 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint.pth --output_dir logs/ft_xlnet2_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
 ```
 
-## finetune xlnet(2):  
-```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vit_jax.main --workdir=./ft_xlnet2 --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./xlnet2 --config.batch=512 --config.batch_eval=512
+## pretrain xlnet (multi-host):  
+python -m torch.distributed.launch --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr="192.168.245.128" --master_port=1234 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49
+python -m torch.distributed.launch --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr="192.168.245.128" --master_port=1234 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49
 
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 python -m vit_jax.main --workdir=./ft_xlnet2-mask195 --config=./vit_jax/configs/ft.py:b16 --config.dataset=/data/LargeData/Large/ImageNet/ --config.pretrained_path=./xlnet2-mask195 --config.batch=448 --config.batch_eval=448
-```
+python -m torch.distributed.launch --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr="192.168.245.135" --master_port=1234 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
+python -m torch.distributed.launch --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr="192.168.245.135" --master_port=1234 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
 
 
 ## run by slurm
-to debug: 
+to debug:
 ```
 srun -t 0:30:00 -N 1 --gres=gpu:4 --pty /bin/bash -l; source /apps/local/conda_init.sh; conda activate hao_vit
 ```
