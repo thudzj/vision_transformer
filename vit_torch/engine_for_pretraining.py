@@ -189,22 +189,23 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, pred_pos,
     img_squeeze = rearrange(ori_img, 'b c (h p1) (w p2) -> b (h w) (p1 p2) c', p1=patch_size[0], p2=patch_size[1])
     img_norm = (img_squeeze - img_squeeze.mean(dim=-2, keepdim=True)) / (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6)
     img_patch = rearrange(img_norm, 'b n p c -> b n (p c)')
-    for idx_b in range(img_patch.shape[0]):
-        img_patch[idx_b][bool_masked_pos[idx_b]] = outputs[idx_b]
+    if not pred_pos:
+        img_patch.scatter_(1, target_indices[:, :, None].expand_as(outputs), outputs)
 
     #make mask
     mask = torch.ones_like(img_patch)
-    for idx_b in range(mask.shape[0]):
-        mask[idx_b][bool_masked_pos[idx_b]] = 0
+    mask.scatter_(1, target_indices[:, :, None].expand_as(outputs), torch.zeros_like(outputs))
     mask = rearrange(mask, 'b n (p c) -> b n p c', c=3)
     mask = rearrange(mask, 'b (h w) (p1 p2) c -> b c (h p1) (w p2)',
         p1=patch_size[0], p2=patch_size[1], h=window_size[0], w=window_size[1])
 
     #save reconstruction img
     rec_img = rearrange(img_patch, 'b n (p c) -> b n p c', c=3)
-    if not pred_pos:
-        rec_img = rec_img * (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6) \
-                    + img_squeeze.mean(dim=-2, keepdim=True)
+    rec_img = rec_img * (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6) \
+                + img_squeeze.mean(dim=-2, keepdim=True)
+    if pred_pos:
+        outputs = outputs.view(outputs.shape[0], outputs.shape[1], -1, 3)
+        rec_img.scatter_(1, target_indices[:, :, None, None].expand_as(outputs), outputs)
     rec_img = rearrange(rec_img, 'b (h w) (p1 p2) c -> b c (h p1) (w p2)',
         p1=patch_size[0], p2=patch_size[1], h=window_size[0], w=window_size[1])
 
