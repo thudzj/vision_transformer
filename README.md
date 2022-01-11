@@ -8,7 +8,6 @@ conda init
 conda config --set auto_activate_base false
 conda install cudatoolkit=11.1 cudnn -c pytorch -c conda-forge
 sudo ln -s  /usr/local/cuda-11.1/lib64/libcupti.so.11.1 /usr/local/cuda-11.1/lib64/libcupti.so.11.0
-
 # source prepare.sh
 ```
 
@@ -55,6 +54,10 @@ NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank
 ```
 
 ## run by slurm
+```
+pip3 install torch==1.10.1+cu111 torchvision==0.11.2+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+```
+
 to debug:
 ```
 srun -t 0:30:00 -N 1 --gres=gpu:4 --pty /bin/bash -l; source /apps/local/conda_init.sh; conda activate hao_vit
