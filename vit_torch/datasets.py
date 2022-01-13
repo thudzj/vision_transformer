@@ -19,6 +19,7 @@ from masking_generator import RandomMaskingGenerator
 from dataset_folder import ImageFolder
 
 from PIL import Image, ImageFilter
+import random
 
 
 class GaussianBlur(object):
@@ -55,25 +56,26 @@ class DataAugmentationForMAE(object):
             ])
         else:
             if 'xlnet' in args.model and args.pred_pos:
-                # guassian_blur from https://github.com/facebookresearch/moco/
                 jitter_d = 1.0
                 jitter_p = 0.8
                 grey_p = 0.2
-                blur_sigma = [0.1, 2.0]
-                blur_p = 0.5
 
-                guassian_blur = transforms.RandomApply([GaussianBlur(blur_sigma)], p=blur_p)
+                # blur_sigma = [0.1, 2.0]
+                # blur_p = 0.5
+
+                # guassian_blur from https://github.com/facebookresearch/moco/
+                # guassian_blur = transforms.RandomApply([GaussianBlur(blur_sigma)], p=blur_p)
 
                 color_jitter = transforms.ColorJitter(
                     0.8*jitter_d, 0.8*jitter_d, 0.8*jitter_d, 0.2*jitter_d)
                 rnd_color_jitter = transforms.RandomApply([color_jitter], p=jitter_p)
 
                 rnd_grey = transforms.RandomGrayscale(p=grey_p)
-    
+
                 self.transform = transforms.Compose([
                     rnd_color_jitter,
                     rnd_grey,
-                    guassian_blur,
+                    # guassian_blur,
                     transforms.RandomResizedCrop(args.input_size),
                     transforms.RandomHorizontalFlip(),
                     transforms.ToTensor(),

@@ -7,6 +7,7 @@ eval "$(/home/ubuntu/anaconda3/bin/conda shell.bash hook)"
 conda init
 conda config --set auto_activate_base false
 conda install cudatoolkit=11.1 cudnn -c pytorch -c conda-forge
+pip3 install torch==1.10.1+cu111 torchvision==0.11.2+cu111 -f https://download.pytorch.org/whl/torch_stable.html
 sudo ln -s  /usr/local/cuda-11.1/lib64/libcupti.so.11.1 /usr/local/cuda-11.1/lib64/libcupti.so.11.0
 # source prepare.sh
 ```
@@ -50,21 +51,18 @@ NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank
 ```
 
 ## pretrain xlnet2:
-if simple node, use the head `python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
+if simple node, use the head `python3 -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
 
 ```
-vit_torch/run_pretraining.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
+vit_torch/run_pretraining.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/train --model pretrain_xlnet_base_patch16_224 --num_workers 16 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
 ```
 
 ft
 ```
-vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet2_base_patch16_224 --batch_size 64 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
+vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet2_base_patch16_224 --num_workers 16 --batch_size 64 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
 ```
 
 ## run by slurm
-```
-pip3 install torch==1.10.1+cu111 torchvision==0.11.2+cu111 -f https://download.pytorch.org/whl/torch_stable.html
-```
 
 to debug:
 ```
