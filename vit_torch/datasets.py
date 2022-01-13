@@ -18,6 +18,20 @@ from timm.data import create_transform
 from masking_generator import RandomMaskingGenerator
 from dataset_folder import ImageFolder
 
+from PIL import Image, ImageFilter
+
+
+class GaussianBlur(object):
+    """Gaussian blur augmentation: https://github.com/facebookresearch/moco/"""
+
+    def __init__(self, sigma=[.1, 2.]):
+        self.sigma = sigma
+
+    def __call__(self, x):
+        sigma = random.uniform(self.sigma[0], self.sigma[1])
+        x = x.filter(ImageFilter.GaussianBlur(radius=sigma))
+        return x
+
 
 class DataAugmentationForMAE(object):
     def __init__(self, args, for_val=False):
@@ -40,13 +54,41 @@ class DataAugmentationForMAE(object):
                     std=torch.tensor(std))
             ])
         else:
-            self.transform = transforms.Compose([
-                transforms.RandomResizedCrop(args.input_size),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=torch.tensor(mean),
-                    std=torch.tensor(std))
-            ])
+            if 'xlnet' in args.model and args.pred_pos:
+                # guassian_blur from https://github.com/facebookresearch/moco/
+                jitter_d = 1.0
+                jitter_p = 0.8
+                grey_p = 0.2
+                blur_sigma = [0.1, 2.0]
+                blur_p = 0.5
+
+                guassian_blur = transforms.RandomApply([GaussianBlur(blur_sigma)], p=blur_p)
+
+                color_jitter = transforms.ColorJitter(
+                    0.8*jitter_d, 0.8*jitter_d, 0.8*jitter_d, 0.2*jitter_d)
+                rnd_color_jitter = transforms.RandomApply([color_jitter], p=jitter_p)
+
+                rnd_grey = transforms.RandomGrayscale(p=grey_p)
+    
+                self.transform = transforms.Compose([
+                    rnd_color_jitter,
+                    rnd_grey,
+                    guassian_blur,
+                    transforms.RandomResizedCrop(args.input_size),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=torch.tensor(mean),
+                        std=torch.tensor(std))
+                ])
+            else:
+                self.transform = transforms.Compose([
+                    transforms.RandomResizedCrop(args.input_size),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=torch.tensor(mean),
+                        std=torch.tensor(std))
+                ])
 
         self.masked_position_generator = RandomMaskingGenerator(
             args.window_size, args.mask_ratio
