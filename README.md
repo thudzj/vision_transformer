@@ -32,25 +32,33 @@ CUDA_VISIBLE_DEVICES=4,5,6,7 python -m torch.distributed.launch --master_port 60
 python -m torch.distributed.launch --nproc_per_node=8 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_mae_base_patch16_224/checkpoint.pth --output_dir logs/ft_mae_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
 ```
 
-## pretrain xlnet:  
-```
-python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49
 
-python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
-```
+## pretrain xlnet:
+if simple node, use the head `python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
 
-## finetune xlnet:  
 ```
-python -m torch.distributed.launch --nproc_per_node=8 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49
 
-python -m torch.distributed.launch --nproc_per_node=8 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint.pth --output_dir logs/ft_xlnet2_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49
 ```
 
-## pretrain xlnet (multi-host):  
+ft
 ```
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --no_auto_resume
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
 
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --no_auto_resume
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
+```
+
+## pretrain xlnet2:
+if simple node, use the head `python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
+
+```
+vit_torch/run_pretraining.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
+```
+
+ft
+```
+vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet2_base_patch16_224 --batch_size 64 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
 ```
 
 ## run by slurm
