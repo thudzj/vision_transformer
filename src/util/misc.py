@@ -1,30 +1,24 @@
-# --------------------------------------------------------
-# --------------------------------------------------------
-# Based on BEiT, timm, DINO and DeiT code bases
-# https://github.com/microsoft/unilm/tree/master/beit
-# https://github.com/rwightman/pytorch-image-models/tree/master/timm
-# https://github.com/facebookresearch/deit
-# https://github.com/facebookresearch/dino
-# --------------------------------------------------------'
-import io
-import os
-import math
-import time
-import json
-from collections import defaultdict, deque
-import datetime
-import numpy as np
-from timm.utils import get_state_dict
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+# --------------------------------------------------------
+# References:
+# DeiT: https://github.com/facebookresearch/deit
+# BEiT: https://github.com/microsoft/unilm/tree/master/beit
+# --------------------------------------------------------
+
+import builtins
+import datetime
+import os
+import time
+from collections import defaultdict, deque
 from pathlib import Path
 
 import torch
 import torch.distributed as dist
 from torch._six import inf
-
-import random
-
-from tensorboardX import SummaryWriter
 
 from PIL import Image
 
@@ -175,57 +169,21 @@ class MetricLogger(object):
             header, total_time_str, total_time / len(iterable)))
 
 
-class TensorboardLogger(object):
-    def __init__(self, log_dir):
-        self.writer = SummaryWriter(logdir=log_dir)
-        self.step = 0
-
-    def set_step(self, step=None):
-        if step is not None:
-            self.step = step
-        else:
-            self.step += 1
-
-    def update(self, head='scalar', step=None, **kwargs):
-        for k, v in kwargs.items():
-            if v is None:
-                continue
-            if isinstance(v, torch.Tensor):
-                v = v.item()
-            assert isinstance(v, (float, int))
-            self.writer.add_scalar(head + "/" + k, v, self.step if step is None else step)
-
-    def flush(self):
-        self.writer.flush()
-
-def seed_worker(worker_id):
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
-
-def _load_checkpoint_for_ema(model_ema, checkpoint):
-    """
-    Workaround for ModelEma._load_checkpoint to accept an already-loaded object
-    """
-    mem_file = io.BytesIO()
-    torch.save(checkpoint, mem_file)
-    mem_file.seek(0)
-    model_ema._load_checkpoint(mem_file)
-
-
 def setup_for_distributed(is_master):
     """
     This function disables printing when not in master process
     """
-    import builtins as __builtin__
-    builtin_print = __builtin__.print
+    builtin_print = builtins.print
 
     def print(*args, **kwargs):
         force = kwargs.pop('force', False)
+        force = force or (get_world_size() > 8)
         if is_master or force:
+            now = datetime.datetime.now().time()
+            builtin_print('[{}] '.format(now), end='')  # print with time stamp
             builtin_print(*args, **kwargs)
 
-    __builtin__.print = print
+    builtins.print = print
 
 
 def is_dist_avail_and_initialized():
@@ -272,11 +230,11 @@ def init_distributed_mode(args):
         args.world_size = int(os.environ['WORLD_SIZE'])
         args.gpu = int(os.environ['LOCAL_RANK'])
     elif 'SLURM_PROCID' in os.environ:
-        args.world_size = int(os.environ["WORLD_SIZE"])
         args.rank = int(os.environ['SLURM_PROCID'])
         args.gpu = args.rank % torch.cuda.device_count()
     else:
         print('Not using distributed mode')
+        setup_for_distributed(is_master=True)  # hack
         args.distributed = False
         return
 
@@ -284,63 +242,12 @@ def init_distributed_mode(args):
 
     torch.cuda.set_device(args.gpu)
     args.dist_backend = 'nccl'
-    print('| distributed init (rank {}): {}, gpu {}, world_size {}'.format(
-        args.rank, args.dist_url, args.gpu, args.world_size), flush=True)
+    print('| distributed init (rank {}): {}, gpu {}'.format(
+        args.rank, args.dist_url, args.gpu), flush=True)
     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                          world_size=args.world_size, rank=args.rank)
-    print("0000000")
     torch.distributed.barrier()
-    print("1111111")
     setup_for_distributed(args.rank == 0)
-
-
-def load_state_dict(model, state_dict, prefix='', ignore_missing="relative_position_index"):
-    missing_keys = []
-    unexpected_keys = []
-    error_msgs = []
-    # copy state_dict so _load_from_state_dict can modify it
-    metadata = getattr(state_dict, '_metadata', None)
-    state_dict = state_dict.copy()
-    if metadata is not None:
-        state_dict._metadata = metadata
-
-    def load(module, prefix=''):
-        local_metadata = {} if metadata is None else metadata.get(
-            prefix[:-1], {})
-        module._load_from_state_dict(
-            state_dict, prefix, local_metadata, True, missing_keys, unexpected_keys, error_msgs)
-        for name, child in module._modules.items():
-            if child is not None:
-                load(child, prefix + name + '.')
-
-    load(model, prefix=prefix)
-
-    warn_missing_keys = []
-    ignore_missing_keys = []
-    for key in missing_keys:
-        keep_flag = True
-        for ignore_key in ignore_missing.split('|'):
-            if ignore_key in key:
-                keep_flag = False
-                break
-        if keep_flag:
-            warn_missing_keys.append(key)
-        else:
-            ignore_missing_keys.append(key)
-
-    missing_keys = warn_missing_keys
-
-    if len(missing_keys) > 0:
-        print("Weights of {} not initialized from pretrained model: {}".format(
-            model.__class__.__name__, missing_keys))
-    if len(unexpected_keys) > 0:
-        print("Weights from pretrained model not used in {}: {}".format(
-            model.__class__.__name__, unexpected_keys))
-    if len(ignore_missing_keys) > 0:
-        print("Ignored weights of {} not initialized from pretrained model: {}".format(
-            model.__class__.__name__, ignore_missing_keys))
-    if len(error_msgs) > 0:
-        print('\n'.join(error_msgs))
 
 
 class NativeScalerWithGradNormCount:
@@ -387,27 +294,7 @@ def get_grad_norm_(parameters, norm_type: float = 2.0) -> torch.Tensor:
     return total_norm
 
 
-def cosine_scheduler(base_value, final_value, epochs, niter_per_ep, warmup_epochs=0,
-                     start_warmup_value=0, warmup_steps=-1):
-    warmup_schedule = np.array([])
-    warmup_iters = warmup_epochs * niter_per_ep
-    if warmup_steps > 0:
-        warmup_iters = warmup_steps
-    print("Set warmup steps = %d" % warmup_iters)
-    if warmup_epochs > 0:
-        warmup_schedule = np.linspace(start_warmup_value, base_value, warmup_iters)
-
-    iters = np.arange(epochs * niter_per_ep - warmup_iters)
-    schedule = np.array(
-        [final_value + 0.5 * (base_value - final_value) * (1 + math.cos(math.pi * i / (len(iters)))) for i in iters])
-
-    schedule = np.concatenate((warmup_schedule, schedule))
-
-    assert len(schedule) == epochs * niter_per_ep
-    return schedule
-
-
-def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, model_ema=None):
+def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler):
     output_dir = Path(args.output_dir)
     epoch_name = str(epoch)
     if loss_scaler is not None:
@@ -421,99 +308,39 @@ def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, mo
                 'args': args,
             }
 
-            if model_ema is not None:
-                to_save['model_ema'] = get_state_dict(model_ema)
-
             save_on_master(to_save, checkpoint_path)
     else:
         client_state = {'epoch': epoch}
-        if model_ema is not None:
-            client_state['model_ema'] = get_state_dict(model_ema)
         model.save_checkpoint(save_dir=args.output_dir, tag="checkpoint-%s" % epoch_name, client_state=client_state)
 
 
-def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, model_ema=None):
-    output_dir = Path(args.output_dir)
-    if loss_scaler is not None:
-        # torch.amp
-        if args.auto_resume and len(args.resume) == 0:
-            import glob
-            all_checkpoints = glob.glob(os.path.join(output_dir, 'checkpoint-*.pth'))
-            latest_ckpt = -1
-            for ckpt in all_checkpoints:
-                t = ckpt.split('-')[-1].split('.')[0]
-                if t.isdigit():
-                    latest_ckpt = max(int(t), latest_ckpt)
-            if latest_ckpt >= 0:
-                args.resume = os.path.join(output_dir, 'checkpoint-%d.pth' % latest_ckpt)
-            print("Auto resume checkpoint: %s" % args.resume)
+def load_model(args, model_without_ddp, optimizer, loss_scaler):
+    if args.resume:
+        if args.resume.startswith('https'):
+            checkpoint = torch.hub.load_state_dict_from_url(
+                args.resume, map_location='cpu', check_hash=True)
+        else:
+            checkpoint = torch.load(args.resume, map_location='cpu')
+        model_without_ddp.load_state_dict(checkpoint['model'])
+        print("Resume checkpoint %s" % args.resume)
+        if 'optimizer' in checkpoint and 'epoch' in checkpoint and not (hasattr(args, 'eval') and args.eval):
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            args.start_epoch = checkpoint['epoch'] + 1
+            if 'scaler' in checkpoint:
+                loss_scaler.load_state_dict(checkpoint['scaler'])
+            print("With optim & sched!")
 
-        if args.resume:
-            if args.resume.startswith('https'):
-                checkpoint = torch.hub.load_state_dict_from_url(
-                    args.resume, map_location='cpu', check_hash=True)
-            else:
-                checkpoint = torch.load(args.resume, map_location='cpu')
-            model_without_ddp.load_state_dict(checkpoint['model'])
-            print("Resume checkpoint %s" % args.resume)
-            if 'optimizer' in checkpoint and 'epoch' in checkpoint:
-                optimizer.load_state_dict(checkpoint['optimizer'])
-                args.start_epoch = checkpoint['epoch'] + 1
-                if hasattr(args, 'model_ema') and args.model_ema:
-                    _load_checkpoint_for_ema(model_ema, checkpoint['model_ema'])
-                if 'scaler' in checkpoint:
-                    loss_scaler.load_state_dict(checkpoint['scaler'])
-                print("With optim & sched!")
+
+def all_reduce_mean(x):
+    world_size = get_world_size()
+    if world_size > 1:
+        x_reduce = torch.tensor(x).cuda()
+        dist.all_reduce(x_reduce)
+        x_reduce /= world_size
+        return x_reduce.item()
     else:
-        # deepspeed, only support '--auto_resume'.
-        if args.auto_resume:
-            import glob
-            all_checkpoints = glob.glob(os.path.join(output_dir, 'checkpoint-*'))
-            latest_ckpt = -1
-            for ckpt in all_checkpoints:
-                t = ckpt.split('-')[-1].split('.')[0]
-                if t.isdigit():
-                    latest_ckpt = max(int(t), latest_ckpt)
-            if latest_ckpt >= 0:
-                args.resume = os.path.join(output_dir, 'checkpoint-%d' % latest_ckpt)
-                print("Auto resume checkpoint: %d" % latest_ckpt)
-                _, client_states = model.load_checkpoint(args.output_dir, tag='checkpoint-%d' % latest_ckpt)
-                args.start_epoch = client_states['epoch'] + 1
-                if model_ema is not None:
-                    if args.model_ema:
-                        _load_checkpoint_for_ema(model_ema, client_states['model_ema'])
+        return x
 
-
-def create_ds_config(args):
-    args.deepspeed_config = os.path.join(args.output_dir, "deepspeed_config.json")
-    with open(args.deepspeed_config, mode="w") as writer:
-        ds_config = {
-            "train_batch_size": args.batch_size * args.update_freq * get_world_size(),
-            "train_micro_batch_size_per_gpu": args.batch_size,
-            "steps_per_print": 1000,
-            "optimizer": {
-                "type": "Adam",
-                "adam_w_mode": True,
-                "params": {
-                    "lr": args.lr,
-                    "weight_decay": args.weight_decay,
-                    "bias_correction": True,
-                    "betas": [
-                        0.9,
-                        0.999
-                    ],
-                    "eps": 1e-8
-                }
-            },
-            "fp16": {
-                "enabled": True,
-                "loss_scale": 0,
-                "initial_scale_power": 7,
-                "loss_scale_window": 128
-            }
-        }
-
-        writer.write(json.dumps(ds_config, indent=2))
 
 def array_of_a_number(n, h, w, c=0):
   if n == 0:
