@@ -20,6 +20,7 @@ import torch
 import torch.distributed as dist
 from torch._six import inf
 
+import numpy as np
 from PIL import Image
 
 

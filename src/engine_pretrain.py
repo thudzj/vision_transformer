@@ -17,6 +17,11 @@ import torch
 import util.misc as misc
 import util.lr_sched as lr_sched
 
+from einops import rearrange
+import numpy as np
+
+import torchvision
+
 
 def train_one_epoch(model: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -25,16 +30,13 @@ def train_one_epoch(model: torch.nn.Module,
                     args=None):
     model.train(True)
     metric_logger = misc.MetricLogger(delimiter="  ")
-    metric_logger.add_meter('lr', misc.SmoothedValue(grid_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('lr', misc.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 20
 
     accum_iter = args.accum_iter
 
     optimizer.zero_grad()
-
-    if log_writer is not None:
-        print('log_dir: {}'.format(log_writer.log_dir))
 
     for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
@@ -53,7 +55,7 @@ def train_one_epoch(model: torch.nn.Module,
             print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
 
-        loss /= accum_iter
+        loss = loss / accum_iter
         loss_scaler(loss, optimizer, parameters=model.parameters(),
                     update_grad=(data_iter_step + 1) % accum_iter == 0)
         if (data_iter_step + 1) % accum_iter == 0:
@@ -68,12 +70,11 @@ def train_one_epoch(model: torch.nn.Module,
 
         loss_value_reduce = misc.all_reduce_mean(loss_value)
         if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
-            """ We use epoch_1000x as the x-axis in tensorboard.
-            This calibrates different curves when batch size changes.
-            """
-            epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
-            log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)
-            log_writer.add_scalar('lr', lr, epoch_1000x)
+            log_writer.write_scalars(
+              len(data_loader) * epoch + data_iter_step,
+              dict(
+                  loss=loss_value_reduce,
+                  lr=lr))
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -83,8 +84,8 @@ def train_one_epoch(model: torch.nn.Module,
 
 @torch.no_grad()
 def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, args):
-    patch_size = model.patch_embed.patch_size
-    grid_size = model.patch_embed.grid_size
+    patch_size = model.module.patch_embed.patch_size
+    grid_size = (args.input_size // patch_size[0], args.input_size // patch_size[1])
 
     img = next(iter(data_loader_val))[0]
     img = img.to(device, non_blocking=True)
@@ -111,11 +112,11 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
     img_norm = (img_squeeze - img_squeeze.mean(dim=-2, keepdim=True)) / (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6)
     img_patch = rearrange(img_norm, 'b n p c -> b n (p c)')
     if not args.pred_pos:
-        img_patch.scatter_(1, target_indices[:, :, None].expand_as(outputs), outputs)
+        img_patch.scatter_(1, target_indices, outputs)
 
     #make mask
     mask = torch.ones_like(img_patch)
-    mask.scatter_(1, target_indices[:, :, None].expand_as(outputs), torch.zeros_like(outputs))
+    mask.scatter_(1, target_indices, torch.zeros_like(outputs))
     mask = rearrange(mask, 'b n (p c) -> b n p c', c=3)
     mask = rearrange(mask, 'b (h w) (p1 p2) c -> b c (h p1) (w p2)',
         p1=patch_size[0], p2=patch_size[1], h=grid_size[0], w=grid_size[1])
@@ -126,7 +127,7 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
                 + img_squeeze.mean(dim=-2, keepdim=True)
     if args.pred_pos:
         outputs = outputs.view(outputs.shape[0], outputs.shape[1], -1, 3)
-        rec_img.scatter_(1, target_indices[:, :, None, None].expand_as(outputs), outputs)
+        rec_img.scatter_(1, target_indices.view_as(outputs), outputs)
     rec_img = rearrange(rec_img, 'b (h w) (p1 p2) c -> b c (h p1) (w p2)',
         p1=patch_size[0], p2=patch_size[1], h=grid_size[0], w=grid_size[1])
 
@@ -134,7 +135,10 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
     img_mask = rec_img * mask
 
     if log_writer is not None:
-        log_writer.add_images('samples', ori_img.data.cpu(), epoch)
-        log_writer.add_images('vis', img_mask.data.cpu(), epoch)
-        log_writer.add_images('recon', rec_img.data.cpu(), epoch)
-
+        log_writer.write_images(
+            epoch,
+            dict(
+                samples=ori_img.permute(0, 2, 3, 1).data.cpu().numpy(),
+                vis=img_mask.permute(0, 2, 3, 1).data.cpu().numpy(),
+                recon=rec_img.permute(0, 2, 3, 1).data.cpu().numpy(),)
+            )

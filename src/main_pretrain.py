@@ -18,7 +18,7 @@ from pathlib import Path
 
 import torch
 import torch.backends.cudnn as cudnn
-from torch.utils.tensorboard import SummaryWriter
+from clu import metric_writers
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
@@ -29,6 +29,7 @@ import timm.optim.optim_factory as optim_factory
 
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
+from util.datasets import build_transform
 
 import models_mae
 import models_xlnet
@@ -59,11 +60,11 @@ def get_args_parser():
                         help='Use (per-patch) normalized pixels as targets for computing loss')
     parser.set_defaults(norm_pix_loss=False)
 
-    parser.add_argument('--num_targets', default=None, type=int,    
-                        help='number of the visual tokens/patches to predict')  
-    parser.add_argument('--pred_pos', default=False, action='store_true',   
-                        help='to predict position') 
-    parser.add_argument('--pred_pos_smoothing', default=0., type=float, 
+    parser.add_argument('--num_targets', default=None, type=int,
+                        help='number of the visual tokens/patches to predict')
+    parser.add_argument('--pred_pos', default=False, action='store_true',
+                        help='to predict position')
+    parser.add_argument('--pred_pos_smoothing', default=0., type=float,
                         help='label smoothing for predicting position')
 
     # Optimizer parameters
@@ -159,7 +160,7 @@ def main(args):
 
     if global_rank == 0:
         os.makedirs(args.output_dir, exist_ok=True)
-        log_writer = SummaryWriter(log_dir=args.output_dir)
+        log_writer = metric_writers.create_default_writer(args.output_dir, asynchronous=False)
     else:
         log_writer = None
 
@@ -171,21 +172,25 @@ def main(args):
         drop_last=True,
     )
 
-    data_loader_val = torch.utils.data.DataLoader(  
-        datasets.ImageFolder(os.path.join(args.data_path, 'val'), 
-                             transform=build_transform(False, args)), 
-        sampler=None, shuffle=True,    
-        batch_size=args.batch_size_val, 
-        num_workers=args.num_workers,   
-        pin_memory=False,   
-        drop_last=True, 
+    data_loader_val = torch.utils.data.DataLoader(
+        datasets.ImageFolder(os.path.join(args.data_path, 'val'),
+                             transform=build_transform(False, args)),
+        sampler=None, shuffle=True,
+        batch_size=args.batch_size_val,
+        num_workers=args.num_workers,
+        pin_memory=False,
+        drop_last=True,
     )
-    
+
     # define the model
     if 'mae' in args.model:
         model = models_mae.__dict__[args.model](norm_pix_loss=args.norm_pix_loss)
     elif 'xlnet' in args.model:
-        model = models_xlnet.__dict__[args.model](norm_pix_loss=args.norm_pix_loss)
+        model = models_xlnet.__dict__[args.model](
+            norm_pix_loss=args.norm_pix_loss,
+            pred_pos=args.pred_pos,
+            pred_pos_smoothing=args.pred_pos_smoothing)
+        print("Num_seen", int(model.patch_embed.num_patches * (1 - args.mask_ratio)))
 
     model.to(device)
 
@@ -193,7 +198,7 @@ def main(args):
     print("Model = %s" % str(model_without_ddp))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
-    
+
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
 
@@ -206,7 +211,7 @@ def main(args):
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
-    
+
     # following timm: set wd as 0 for bias and norm layers
     param_groups = optim_factory.add_weight_decay(model_without_ddp, args.weight_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
@@ -214,6 +219,8 @@ def main(args):
     loss_scaler = NativeScaler()
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
+
+    plot_evaluation_results(model, data_loader_val, device, -1, log_writer, args)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -238,8 +245,6 @@ def main(args):
                         'epoch': epoch,}
 
         if args.output_dir and misc.is_main_process():
-            if log_writer is not None:
-                log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 

@@ -18,13 +18,31 @@ from timm.models.vision_transformer import PatchEmbed
 
 from util.pos_embed import get_2d_sincos_pos_embed
 
+class Mlp(nn.Module):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
 
 class Attention(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
+    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
-        self.scale = head_dim ** -0.5
+        # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
+        self.scale = qk_scale or head_dim ** -0.5
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
@@ -34,7 +52,7 @@ class Attention(nn.Module):
     def forward(self, x, select_kv=None, attn_mask=None):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
+        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
 
         if select_kv is not None:
             k = k[:, :, :select_kv, :]
@@ -57,11 +75,12 @@ class Attention(nn.Module):
 
 class Block(nn.Module):
 
-    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, drop=0., attn_drop=0.,
+    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
         self.norm1 = norm_layer(dim)
-        self.attn = Attention(dim, num_heads=num_heads, qkv_bias=qkv_bias, attn_drop=attn_drop, proj_drop=drop)
+        self.attn = Attention(
+            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -79,7 +98,7 @@ class XLNetViT(nn.Module):
     """
     def __init__(self, img_size=224, patch_size=16, in_chans=3,
                  embed_dim=1024, depth=24, num_heads=16,
-                 mlp_ratio=4., norm_layer=nn.LayerNorm, 
+                 mlp_ratio=4., norm_layer=nn.LayerNorm,
                  norm_pix_loss=False, pred_pos=False, pred_pos_smoothing=0.):
         super().__init__()
 
@@ -161,7 +180,7 @@ class XLNetViT(nn.Module):
         p = self.patch_embed.patch_size[0]
         h = w = int(x.shape[1]**.5)
         assert h * w == x.shape[1]
-        
+
         x = x.reshape(shape=(x.shape[0], h, w, p, p, 3))
         x = torch.einsum('nhwpqc->nchpwq', x)
         imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
@@ -200,9 +219,6 @@ class XLNetViT(nn.Module):
             attn_mask], 1)
         attn_mask = attn_mask.bool().to(x.device)
 
-        if x.device.index == 0:
-            print(attn_mask)
-
         # apply Transformer blocks
         x_g = torch.cat([x, g], 1)
         for blk in self.blocks:
@@ -223,8 +239,8 @@ class XLNetViT(nn.Module):
         if self.pred_pos:
             W = int(self.patch_embed.num_patches**.5)
             # perform label smoothing
-            row_labels = torch.div(target_indices.reshape(-1, 1, 1), W, rounding_mode='trunc')
-            col_labels = target_indices.reshape(-1, 1, 1) % W
+            row_labels = torch.div(target_indices[:,:,0].reshape(-1, 1, 1), W, rounding_mode='trunc')
+            col_labels = target_indices[:,:,0].reshape(-1, 1, 1) % W
             new_labels = torch.exp(-((row_labels - torch.arange(W, device=imgs.device).view(1, -1, 1)) ** 2 +
                             (col_labels - torch.arange(W, device=imgs.device).view(1, 1, -1)) ** 2)
                           / 2. / (self.pred_pos_smoothing + 1e-8))
@@ -260,6 +276,6 @@ def xlnet_vit_large_patch16(**kwargs):
 
 def xlnet_vit_huge_patch14(**kwargs):
     model = XLNetViT(
-        patch_size=14, embed_dim=1280, depth=32, num_heads=16, 
+        patch_size=14, embed_dim=1280, depth=32, num_heads=16,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model

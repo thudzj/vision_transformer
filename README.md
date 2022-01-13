@@ -8,8 +8,21 @@ conda init
 conda config --set auto_activate_base false
 conda install cudatoolkit=11.1 cudnn -c pytorch -c conda-forge
 pip3 install torch==1.10.1+cu111 torchvision==0.11.2+cu111 -f https://download.pytorch.org/whl/torch_stable.html
-sudo ln -s  /usr/local/cuda-11.1/lib64/libcupti.so.11.1 /usr/local/cuda-11.1/lib64/libcupti.so.11.0
+# sudo ln -s  /usr/local/cuda-11.1/lib64/libcupti.so.11.1 /usr/local/cuda-11.1/lib64/libcupti.so.11.0
 # source prepare.sh
+pip3 install timm==0.3.2
+```
+
+edit `python3.6/site-packages/timm/models/layers/helpers.py`
+```
+import torch
+TORCH_MAJOR = int(torch.__version__.split('.')[0])
+TORCH_MINOR = int(torch.__version__.split('.')[1])
+
+if TORCH_MAJOR == 1 and TORCH_MINOR < 8:
+    from torch._six import container_abcs
+else:
+    import collections.abc as container_abcs
 ```
 
 ## to download imagenet
@@ -23,43 +36,33 @@ tar -xvzf imagenet_object_localization_patched2019.tar.gz
 python3 in_val_process.py
 ```
 
-## pretrain mae:  
-```
-CUDA_VISIBLE_DEVICES=4,5,6,7 python -m torch.distributed.launch --master_port 60660 --nproc_per_node=4 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --mask_ratio 0.75 --model pretrain_mae_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_mae_base_patch16_224
-```
-
-## finetune mae:  
-```
-python -m torch.distributed.launch --nproc_per_node=8 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_mae_base_patch16_224/checkpoint.pth --output_dir logs/ft_mae_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
-```
-
 
 ## pretrain xlnet:
 if simple node, use the head `python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
 
 ```
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224 --accum_iter 2 --mask_ratio 0.99 --num_targets 49
 
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_pretraining.py --data_path /data/LargeData/Large/ImageNet/train --model pretrain_xlnet_base_patch16_224 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet_base_patch16_224 --mask_ratio 0.995 --num_targets 49
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224 --accum_iter 2 --mask_ratio 0.99 --num_targets 49
 ```
 
 ft
 ```
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
-
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
+None
 ```
 
 ## pretrain xlnet2:
 if simple node, use the head `python3 -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
 
 ```
-vit_torch/run_pretraining.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/train --model pretrain_xlnet_base_patch16_224 --num_workers 16 --batch_size 128 --opt adamw --opt_betas 0.9 0.95 --warmup_epochs 40 --epochs 400 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.995 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
+
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
 ```
 
 ft
 ```
-vit_torch/run_class_finetuning.py --model vit_base_patch16_224 --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet2_base_patch16_224 --num_workers 16 --batch_size 64 --opt adamw --opt_betas 0.9 0.999 --weight_decay 0.05 --epochs 100 --dist_eval
+None
 ```
 
 ## run by slurm
