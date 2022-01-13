@@ -73,11 +73,12 @@ class DataAugmentationForMAE(object):
                 rnd_grey = transforms.RandomGrayscale(p=grey_p)
 
                 self.transform = transforms.Compose([
-                    rnd_color_jitter,
-                    rnd_grey,
-                    # guassian_blur,
+
                     transforms.RandomResizedCrop(args.input_size),
                     transforms.RandomHorizontalFlip(),
+                    # guassian_blur,
+                    rnd_color_jitter,
+                    rnd_grey,
                     transforms.ToTensor(),
                     transforms.Normalize(
                         mean=torch.tensor(mean),
