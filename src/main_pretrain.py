@@ -36,6 +36,8 @@ import models_xlnet
 
 from engine_pretrain import train_one_epoch, plot_evaluation_results
 
+import tensorflow as tf
+tf.config.experimental.set_visible_devices([], 'GPU')
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Pre-training', add_help=False)
@@ -159,7 +161,6 @@ def main(args):
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
     if global_rank == 0:
-        os.makedirs(args.output_dir, exist_ok=True)
         log_writer = metric_writers.create_default_writer(args.output_dir, asynchronous=False)
     else:
         log_writer = None

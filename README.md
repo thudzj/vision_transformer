@@ -41,28 +41,36 @@ python3 in_val_process.py
 if simple node, use the head `python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
 
 ```
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224 --accum_iter 2 --mask_ratio 0.99 --num_targets 49
-
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224 --accum_iter 2 --mask_ratio 0.99 --num_targets 49
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788
+src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224 --accum_iter 2 --mask_ratio 0.99 --num_targets 49
 ```
 
-ft-bs1024
+ft-bs1024 (n16 * b64)
 ```
 https://github.com/facebookresearch/mae/blob/main/FINETUNE.md
-src/main_finetune.py --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 128 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+src/main_finetune.py --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 ```
 
 ## pretrain xlnet2:
 if simple node, use the head `python3 -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
 
 ```
-python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
-
-python3 -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788  
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788
+src/main_pretrain.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
 ```
 
-ft-bs1024
+ft-bs1024 (n16 * b64)
 ```
-https://github.com/facebookresearch/mae/blob/main/FINETUNE.md
-src/main_finetune.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint.pth --output_dir logs/ft_xlnet2_base_patch16_224 --batch_size 256 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.22.198" --master_port=7788
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="172.31.22.198" --master_port=7788
+src/main_finetune.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet2_base_patch16_224 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+```
+
+## pretrain xlnet_m0.95:
+```
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.22.198" --master_port=7788
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="172.31.22.198" --master_port=7788
+src/main_pretrain.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224_m0.95 --mask_ratio 0.95 --num_targets 49
 ```
