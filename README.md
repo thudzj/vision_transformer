@@ -49,12 +49,14 @@ src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 12
 ft-bs1024 (n16 * b64)
 ```
 https://github.com/facebookresearch/mae/blob/main/FINETUNE.md
-src/main_finetune.py --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+src/main_finetune.py --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 83.034 Acc@5 96.302 loss 0.759
 ```
 
 linear probing-bs16384
 ```
-src/main_linprobe.py --data_path /data/LargeData/Large/ImageNet/ --model vit_base_patch16 --cls_token --epochs 90 --blr 0.1 --weight_decay 0.0 --dist_eval --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/linprob_xlnet_base_patch16_224 --batch_size 1024
+src/main_linprobe.py --data_path /data/LargeData/Large/ImageNet/ --model vit_base_patch16 --cls_token --epochs 90 --blr 0.1 --weight_decay 0.0 --dist_eval --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/linprob_xlnet_base_patch16_224 --batch_size 1024 --num_workers 16
+    * Acc@1 51.088 Acc@5 74.608 loss 2.220
 ```
 
 ## pretrain xlnet2:
@@ -75,7 +77,7 @@ src/main_finetune.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --fine
 
 linear probing-bs16384
 ```
-src/main_linprobe.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --model vit_base_patch16 --cls_token --epochs 90 --blr 0.1 --weight_decay 0.0 --dist_eval --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/linprob_xlnet2_base_patch16_224 --batch_size 1024
+src/main_linprobe.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --model vit_base_patch16 --cls_token --epochs 90 --blr 0.1 --weight_decay 0.0 --dist_eval --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/linprob_xlnet2_base_patch16_224 --batch_size 1024
 ```
 
 ## pretrain xlnet_m0.95:

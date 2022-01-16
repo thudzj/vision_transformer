@@ -38,6 +38,22 @@ def train_one_epoch(model: torch.nn.Module,
 
     optimizer.zero_grad()
 
+    if 'xlnet' in args.model:
+        num_seen = int(model.module.patch_embed.num_patches * (1 - args.mask_ratio))
+        num_targets = args.num_targets
+        attn_mask = torch.concat([torch.zeros(num_seen + 1, num_targets - 1),
+                                 torch.ones(num_targets - 1, num_targets - 1).tril(),
+                                 torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
+        attn_mask = torch.concat([
+            torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
+        if epoch == 0:
+            print("Training attention mask")
+            with np.printoptions(threshold=sys.maxsize, linewidth=10000):
+                print(attn_mask.data.cpu().numpy())
+        attn_mask = attn_mask.bool().to(device)
+    else:
+        attn_mask = None
+
     for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
         # we use a per iteration (instead of per epoch) lr scheduler
@@ -47,7 +63,8 @@ def train_one_epoch(model: torch.nn.Module,
         samples = samples.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            loss, _, _ = model(samples, mask_ratio=args.mask_ratio, num_targets=args.num_targets)
+            loss, _, _ = model(samples, mask_ratio=args.mask_ratio,
+                               num_targets=args.num_targets, attn_mask=attn_mask)
 
         loss_value = loss.item()
 
@@ -84,13 +101,27 @@ def train_one_epoch(model: torch.nn.Module,
 
 @torch.no_grad()
 def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, args):
+
+    if 'xlnet' in args.model:
+        num_seen = int(model.module.patch_embed.num_patches * (1 - args.mask_ratio))
+        num_targets = model.module.patch_embed.num_patches - num_seen
+        attn_mask = torch.concat([torch.zeros(num_seen + 1, num_targets - 1),
+                                 torch.ones(num_targets - 1, num_targets - 1).tril(),
+                                 torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
+        attn_mask = torch.concat([
+            torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
+        attn_mask = attn_mask.bool().to(device)
+    else:
+        attn_mask = None
+
+
     patch_size = model.module.patch_embed.patch_size
     grid_size = (args.input_size // patch_size[0], args.input_size // patch_size[1])
 
     img = next(iter(data_loader_val))[0]
     img = img.to(device, non_blocking=True)
 
-    _, outputs, target_indices = model(img, mask_ratio=args.mask_ratio)
+    _, outputs, target_indices = model(img, mask_ratio=args.mask_ratio, attn_mask=attn_mask)
     if args.pred_pos:
         recon = outputs.argmax(-1)
         recon_ = []

@@ -186,7 +186,7 @@ class XLNetViT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
         return imgs
 
-    def forward_encoder(self, x, num_seen, num_targets):
+    def forward_encoder(self, x, num_seen, num_targets, attn_mask):
         # embed patches
         x_ = self.patch_embed(x)
 
@@ -203,21 +203,13 @@ class XLNetViT(nn.Module):
         noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
         ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
         ids_shuffle = ids_shuffle.unsqueeze(-1).repeat(1, 1, D)
-        x = torch.gather(x, dim=1, index=ids_shuffle[:, :num_seen + num_targets])
+        x = torch.gather(x, dim=1, index=ids_shuffle[:, :num_seen + num_targets - 1])
         g = torch.gather(g, dim=1, index=ids_shuffle[:, num_seen:num_seen + num_targets])
 
         # append cls token
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
         cls_tokens = cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
-
-        attn_mask = torch.concat([torch.zeros(x.shape[1] - g.shape[1], g.shape[1]),
-                                 torch.ones(g.shape[1], g.shape[1]).tril(),
-                                 torch.ones(g.shape[1], g.shape[1]).tril(-1)], 0)
-        attn_mask = torch.concat([
-            torch.ones(x.shape[1] + g.shape[1], x.shape[1] - g.shape[1]),
-            attn_mask], 1)
-        attn_mask = attn_mask.bool().to(x.device)
 
         # apply Transformer blocks
         x_g = torch.cat([x, g], 1)
@@ -228,12 +220,12 @@ class XLNetViT(nn.Module):
         g = self.head(g)
         return g, ids_shuffle
 
-    def forward(self, imgs, mask_ratio=1, num_targets=None):
+    def forward(self, imgs, mask_ratio=1, num_targets=None, attn_mask=None):
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
 
-        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets)
+        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
         target_indices = ids_shuffle[:, num_seen:num_seen + num_targets]
 
         if self.pred_pos:
