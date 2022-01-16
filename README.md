@@ -52,6 +52,11 @@ https://github.com/facebookresearch/mae/blob/main/FINETUNE.md
 src/main_finetune.py --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 ```
 
+linear probing-bs16384
+```
+src/main_linprobe.py --data_path /data/LargeData/Large/ImageNet/ --model vit_base_patch16 --cls_token --epochs 90 --blr 0.1 --weight_decay 0.0 --dist_eval --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/linprob_xlnet_base_patch16_224 --batch_size 1024
+```
+
 ## pretrain xlnet2:
 if simple node, use the head `python3 -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
 
@@ -66,6 +71,11 @@ ft-bs1024 (n16 * b64)
 python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.22.198" --master_port=7788
 python3 -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="172.31.22.198" --master_port=7788
 src/main_finetune.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet2_base_patch16_224 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+```
+
+linear probing-bs16384
+```
+src/main_linprobe.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --model vit_base_patch16 --cls_token --epochs 90 --blr 0.1 --weight_decay 0.0 --dist_eval --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/linprob_xlnet2_base_patch16_224 --batch_size 1024
 ```
 
 ## pretrain xlnet_m0.95:
