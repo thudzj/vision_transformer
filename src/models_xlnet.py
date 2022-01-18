@@ -49,10 +49,18 @@ class Attention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x, select_kv=None, attn_mask=None):
+    def forward(self, x, x2=None, select_kv=None, attn_mask=None):
         B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+        if x2 is None:
+            qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+            q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+        else:
+            B2, N2, _ = x2.shape
+            bias1 = None if self.qkv.bias is None else self.qkv.bias[:self.qkv.bias.shape[0]//3]
+            bias2 = None if self.qkv.bias is None else self.qkv.bias[self.qkv.bias.shape[0]//3:]
+            q = nn.functional.linear(x, self.qkv.weight[:self.qkv.weight.shape[0]//3], bias1).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+            kv = nn.functional.linear(x2, self.qkv.weight[self.qkv.weight.shape[0]//3:], bias2).reshape(B2, N2, 2, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+            k, v = kv[0], kv[1]
 
         if select_kv is not None:
             k = k[:, :, :select_kv, :]
@@ -87,8 +95,8 @@ class Block(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
-    def forward(self, x, select_kv=None, attn_mask=None):
-        x = x + self.drop_path(self.attn(self.norm1(x), select_kv, attn_mask))
+    def forward(self, x, x2=None, select_kv=None, attn_mask=None):
+        x = x + self.drop_path(self.attn(self.norm1(x), x2 if x2 is None else self.norm1(x2), select_kv, attn_mask))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
@@ -99,7 +107,8 @@ class XLNetViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3,
                  embed_dim=1024, depth=24, num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm,
-                 norm_pix_loss=False, pred_pos=False, pred_pos_smoothing=0.):
+                 norm_pix_loss=False, pred_pos=False, pred_pos_smoothing=0.,
+                 g_depth=0):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -113,6 +122,13 @@ class XLNetViT(nn.Module):
         self.blocks = nn.ModuleList([
             Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
             for i in range(depth)])
+
+
+        if g_depth > 0:
+            self.g_blocks = nn.ModuleList([
+                Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
+                for i in range(g_depth)])
+
         self.norm = norm_layer(embed_dim)
         if pred_pos:
             self.head = nn.Linear(embed_dim, num_patches, bias=True)
@@ -129,6 +145,7 @@ class XLNetViT(nn.Module):
         self.norm_pix_loss = norm_pix_loss
         self.pred_pos = pred_pos
         self.pred_pos_smoothing = pred_pos_smoothing
+        self.g_depth = g_depth
 
         self.initialize_weights()
 
@@ -212,10 +229,24 @@ class XLNetViT(nn.Module):
         x = torch.cat((cls_tokens, x), dim=1)
 
         # apply Transformer blocks
-        x_g = torch.cat([x, g], 1)
-        for blk in self.blocks:
-            x_g = blk(x_g, select_kv=x.shape[1], attn_mask=attn_mask)
-        g = x_g[:, x.shape[1]:]
+        if self.g_depth == 0:
+            x_g = torch.cat([x, g], 1)
+            for blk in self.blocks:
+                x_g = blk(x_g, select_kv=x.shape[1], attn_mask=attn_mask)
+            g = x_g[:, x.shape[1]:]
+        else:
+            attn_mask1 = attn_mask[:num_seen + num_targets]
+            attn_mask2 = attn_mask[num_seen + num_targets:]
+
+            for lyr in range(len(self.blocks) + 1 - self.g_depth):
+                x = self.blocks[lyr](x, attn_mask=attn_mask1)
+
+            for lyr in range(len(self.blocks) + 1 - self.g_depth, len(self.blocks)):
+                g = self.g_blocks[lyr + self.g_depth - len(self.blocks) - 1](g, x, attn_mask=attn_mask2)
+                x = self.blocks[lyr](x, attn_mask=attn_mask1)
+
+            g = self.g_blocks[-1](g, x, attn_mask=attn_mask2)
+
         g = self.norm(g)
         g = self.head(g)
         return g, ids_shuffle

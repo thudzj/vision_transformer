@@ -68,6 +68,7 @@ def get_args_parser():
                         help='to predict position')
     parser.add_argument('--pred_pos_smoothing', default=0., type=float,
                         help='label smoothing for predicting position')
+    parser.add_argument('--g_depth', default=0, type=int)
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
@@ -190,7 +191,8 @@ def main(args):
         model = models_xlnet.__dict__[args.model](
             norm_pix_loss=args.norm_pix_loss,
             pred_pos=args.pred_pos,
-            pred_pos_smoothing=args.pred_pos_smoothing)
+            pred_pos_smoothing=args.pred_pos_smoothing,
+            g_depth=args.g_depth)
         print("Num_seen", int(model.patch_embed.num_patches * (1 - args.mask_ratio)))
 
     model.to(device)
