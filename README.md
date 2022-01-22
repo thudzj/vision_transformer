@@ -36,98 +36,86 @@ tar -xvzf imagenet_object_localization_patched2019.tar.gz
 python3 in_val_process.py
 ```
 
-## pretrain mae:
-```
-src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 64 --accum_iter 4 --model mae_vit_base_patch16 --norm_pix_loss --mask_ratio 0.75 --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_mae_base_patch16_224
-```
 
-## pretrain xlnet:
 if simple node, use the head `python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
 
+## mae:
+```
+src/main_pretrain.py --batch_size 64 --accum_iter 4 --model mae_vit_base_patch16 --norm_pix_loss --mask_ratio 0.75 --epochs 400 --warmup_epochs 40 --blr 1.5e-4
+```
+
+## xlnet:
 ```
 NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788
 NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788
-src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224 --accum_iter 2 --mask_ratio 0.99 --num_targets 49
-```
+src/main_pretrain.py --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49
 
-ft-bs1024 (n16 * b64)
-```
-https://github.com/facebookresearch/mae/blob/main/FINETUNE.md
-src/main_finetune.py --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
     * Acc@1 83.034 Acc@5 96.302 loss 0.759
-```
 
-linear probing-bs16384
-```
 src/main_linprobe.py --data_path /data/LargeData/Large/ImageNet/ --model vit_base_patch16 --cls_token --epochs 90 --blr 0.1 --weight_decay 0.0 --dist_eval --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --output_dir logs/linprob_xlnet_base_patch16_224 --batch_size 1024 --num_workers 16
     * Acc@1 51.088 Acc@5 74.608 loss 2.220
 ```
 
-## pretrain xlnet2:
-if simple node, use the head `python3 -m torch.distributed.launch --master_port 60660 --nproc_per_node=8`  
-
+## xlnet2:
 ```
 python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788  
 python3 -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788
-src/main_pretrain.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet2_base_patch16_224 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2
+src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2 --tag type2
+
+src/main_finetune.py --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 ```
 
-ft-bs1024 (n16 * b64)
+## xlnet_m0.95:
 ```
-python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.22.198" --master_port=7788
-python3 -m torch.distributed.launch --nnodes=2 --node_rank=1 --nproc_per_node=8 --master_addr="172.31.22.198" --master_port=7788
-src/main_finetune.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/ft_xlnet2_base_patch16_224 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
-```
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag m0.95 --mask_ratio 0.95 --num_targets 49
 
-linear probing-bs16384
-```
-src/main_linprobe.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --model vit_base_patch16 --cls_token --epochs 90 --blr 0.1 --weight_decay 0.0 --dist_eval --finetune logs/pretrain_xlnet2_base_patch16_224/checkpoint-399.pth --output_dir logs/linprob_xlnet2_base_patch16_224 --batch_size 1024
-```
-
-## pretrain xlnet_m0.95:
-```
-python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224_m0.95 --mask_ratio 0.95 --num_targets 49
-
-python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_finetune.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet_base_patch16_224_m0.95/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224_m0.95 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
-
-* Acc@1 83.036 Acc@5 96.282 loss 0.759
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.95/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 83.036 Acc@5 96.282 loss 0.759
 ```
 
 
-## pretrain xlnet_m0.85
+## xlnet_m0.85
 ```
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224_m0.85 --accum_iter 2 --mask_ratio 0.85 --num_targets 49
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag m0.85  --mask_ratio 0.85 --num_targets 49
 
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_finetune.py --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224_m0.85/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224_m0.85 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
-
-"train_loss": 2.668321636577638, "test_loss": 0.7567836930128661, "test_acc1": 83.10340692809356, "test_acc5": 96.36316376928328
-```
-
-
-
-## pretrain xlnet_gdepth13
-```
-python3 -m torch.distributed.launch --nnodes=3 --node_rank=2 --nproc_per_node=8 --master_addr="172.31.19.215" --master_port=7788 src/main_pretrain.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224_gdepth13 --mask_ratio 0.99 --num_targets 49 --g_depth 13
-
-src/main_finetune.py --data_path /home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet_base_patch16_224_gdepth13/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224_gdepth13 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.85/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    "train_loss": 2.668321636577638, "test_loss": 0.7567836930128661, "test_acc1": 83.10340692809356, "test_acc5": 96.36316376928328
 ```
 
 
-## pretrain xlnet_gdepth7
+## xlnet_gdepth13
 ```
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --data_path /data/LargeData/Large/ImageNet/ --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224_gdepth7 --mask_ratio 0.99 --num_targets 49 --g_depth 7
+python3 -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.19.215" --master_port=7788 src/main_pretrain.py --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag gdepth13 --mask_ratio 0.99 --num_targets 49 --g_depth 13
 
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_finetune.py --data_path /data/LargeData/Large/ImageNet/ --finetune logs/pretrain_xlnet_base_patch16_224_gdepth7/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224_gdepth7 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
-
-* Acc@1 82.054 Acc@5 95.993 loss 0.792
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_gdepth13/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 ```
 
-
-## pretrain xlnet_gdepth1
+## xlnet_gdepth7
 ```
-python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --weight_decay 0.05 --output_dir logs/pretrain_xlnet_base_patch16_224_gdepth1 --mask_ratio 0.99 --num_targets 49 --g_depth 1
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag gdepth7 --mask_ratio 0.99 --num_targets 49 --g_depth 7
 
-src/main_finetune.py --data_path /home/ubuntu/ILSVRC/Data/CLS-LOC/ --finetune logs/pretrain_xlnet_base_patch16_224_gdepth1/checkpoint-399.pth --output_dir logs/ft_xlnet_base_patch16_224_gdepth1 --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --weight_decay 0.05 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_gdepth7/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 82.054 Acc@5 95.993 loss 0.792
+```
 
-* Acc@1 82.456 Acc@5 96.020 loss 0.779
+## xlnet_gdepth1
+```
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag gdepth1 --mask_ratio 0.99 --num_targets 49 --g_depth 1
+
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_gdepth1/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 82.456 Acc@5 96.020 loss 0.779
+```
+
+## num_targets 25
+```
+python3 -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="172.31.38.116" --master_port=7788 src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag tar25 --mask_ratio 0.99 --num_targets 25
+
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_tar25/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 82.368 Acc@5 95.982 loss 0.793
+```
+
+## xlnet2 target 64
+```
+python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 src/main_pretrain.py  --batch_size 128 --accum_iter 4 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag type2_tar64 --mask_ratio 0.99 --num_targets 64 --pred_pos --pred_pos_smoothing 0.2
 ```

@@ -39,6 +39,20 @@ from engine_pretrain import train_one_epoch, plot_evaluation_results
 import tensorflow as tf
 tf.config.experimental.set_visible_devices([], 'GPU')
 
+import random
+from PIL import Image, ImageFilter
+
+class GaussianBlur(object):
+    """Gaussian blur augmentation: https://github.com/facebookresearch/moco/"""
+
+    def __init__(self, sigma=[.1, 2.]):
+        self.sigma = sigma
+
+    def __call__(self, x):
+        sigma = random.uniform(self.sigma[0], self.sigma[1])
+        x = x.filter(ImageFilter.GaussianBlur(radius=sigma))
+        return x
+
 def get_args_parser():
     parser = argparse.ArgumentParser('Pre-training', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
@@ -61,6 +75,8 @@ def get_args_parser():
     parser.add_argument('--norm_pix_loss', action='store_true',
                         help='Use (per-patch) normalized pixels as targets for computing loss')
     parser.set_defaults(norm_pix_loss=False)
+
+    parser.add_argument('--span', default=[1], type=int, nargs='+')
 
     parser.add_argument('--num_targets', default=None, type=int,
                         help='number of the visual tokens/patches to predict')
@@ -85,11 +101,12 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/data/Large/LargeData/imagenet/', type=str,
+    parser.add_argument('--data_path', default=None, type=str,
                         help='dataset path')
 
-    parser.add_argument('--output_dir', default='./logs/default',
+    parser.add_argument('--output_dir', default='./logs/',
                         help='path where to save, empty for no saving')
+    parser.add_argument('--tag', default=None, type=str)
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -118,6 +135,16 @@ def get_args_parser():
 def main(args):
     misc.init_distributed_mode(args)
 
+    if args.data_path is None:
+        if os.path.isdir('/home/ubuntu/ILSVRC/Data/CLS-LOC/'):
+            args.data_path = '/home/ubuntu/ILSVRC/Data/CLS-LOC/'
+        elif os.path.isdir('/home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/'):
+            args.data_path = '/home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/'
+        elif os.path.isdir('/data/LargeData/Large/ImageNet/'):
+            args.data_path = '/data/LargeData/Large/ImageNet/'
+        else:
+            exit(1)
+
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
 
@@ -137,6 +164,7 @@ def main(args):
             transforms.RandomHorizontalFlip(),
             transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
             transforms.RandomGrayscale(p=0.2),
+            transforms.RandomApply([GaussianBlur([0.1, 2.0])], p=0.5),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
@@ -192,7 +220,8 @@ def main(args):
             norm_pix_loss=args.norm_pix_loss,
             pred_pos=args.pred_pos,
             pred_pos_smoothing=args.pred_pos_smoothing,
-            g_depth=args.g_depth)
+            g_depth=args.g_depth,
+            span=args.span)
         print("Num_seen", int(model.patch_embed.num_patches * (1 - args.mask_ratio)))
 
     model.to(device)
@@ -261,6 +290,15 @@ def main(args):
 if __name__ == '__main__':
     args = get_args_parser()
     args = args.parse_args()
+    if args.model == 'xlnet_vit_base_patch16':
+        mo = 'xlnet_base_patch16_224'
+    elif args.model == 'mae_vit_base_patch16':
+        mo = 'mae_base_patch16_224'
+    else:
+        mo = args.model
+    args.output_dir = os.path.join(args.output_dir, 'pretrain_' + mo)
+    if args.tag is not None:
+        args.output_dir += '_' + args.tag
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     main(args)

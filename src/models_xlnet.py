@@ -18,6 +18,8 @@ from timm.models.vision_transformer import PatchEmbed
 
 from util.pos_embed import get_2d_sincos_pos_embed
 
+import numpy as np
+
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
@@ -108,7 +110,7 @@ class XLNetViT(nn.Module):
                  embed_dim=1024, depth=24, num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm,
                  norm_pix_loss=False, pred_pos=False, pred_pos_smoothing=0.,
-                 g_depth=0):
+                 g_depth=0, span=[1]):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -142,6 +144,7 @@ class XLNetViT(nn.Module):
             self.mask_token = None
         # --------------------------------------------------------------------------
 
+        self.span = span
         self.norm_pix_loss = norm_pix_loss
         self.pred_pos = pred_pos
         self.pred_pos_smoothing = pred_pos_smoothing
@@ -217,8 +220,16 @@ class XLNetViT(nn.Module):
 
         # permutation auto-regressive modeling
         N, L, D = x.shape  # batch, length, dim
-        noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
-        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+
+        span = self.span[torch.randint(0, len(self.span), (1,)).item()]
+        noise = torch.rand(N, L // span, device=x.device)  # noise in [0, 1]
+        ids_shuffle = ((torch.argsort(noise, dim=1) * span).unsqueeze(-1) + torch.arange(0, span, device=x.device)).flatten(1).long()
+        # print(span, ids_shuffle[:4, :15].data.cpu().numpy())
+
+        # noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
+        # ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+        # print(ids_shuffle.shape)
+
         ids_shuffle = ids_shuffle.unsqueeze(-1).repeat(1, 1, D)
         x = torch.gather(x, dim=1, index=ids_shuffle[:, :num_seen + num_targets - 1])
         g = torch.gather(g, dim=1, index=ids_shuffle[:, num_seen:num_seen + num_targets])

@@ -117,13 +117,13 @@ def get_args_parser():
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
+    parser.add_argument('--data_path', default=None, type=str,
                         help='dataset path')
     parser.add_argument('--nb_classes', default=1000, type=int,
                         help='number of the classification types')
 
-    parser.add_argument('--output_dir', default='./logs/ft',
-                        help='path where to save, empty for no saving')
+    # parser.add_argument('--output_dir', default='./logs/ft',
+                        # help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -155,6 +155,16 @@ def get_args_parser():
 
 def main(args):
     misc.init_distributed_mode(args)
+
+    if args.data_path is None:
+        if os.path.isdir('/home/ubuntu/ILSVRC/Data/CLS-LOC/'):
+            args.data_path = '/home/ubuntu/ILSVRC/Data/CLS-LOC/'
+        elif os.path.isdir('/home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/'):
+            args.data_path = '/home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/'
+        elif os.path.isdir('/data/LargeData/Large/ImageNet/'):
+            args.data_path = '/data/LargeData/Large/ImageNet/'
+        else:
+            exit(1)
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
@@ -348,6 +358,7 @@ def main(args):
 if __name__ == '__main__':
     args = get_args_parser()
     args = args.parse_args()
+    args.output_dir = '/'.join(args.finetune.split('/')[:-1]).replace('pretrain, ft')
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     main(args)
