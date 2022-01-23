@@ -119,3 +119,17 @@ src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_tar25/check
 ```
 python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 src/main_pretrain.py  --batch_size 128 --accum_iter 4 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag type2_tar64 --mask_ratio 0.99 --num_targets 64 --pred_pos --pred_pos_smoothing 0.2
 ```
+
+
+## xlnet span 1 2 4 7
+```
+src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49 --span 1 2 4 7 --tag span1247
+```
+
+## xlnet target 81 epochs 800
+```
+python3 -m torch.distributed.launch --nnodes=4 --nproc_per_node=8 --master_addr="172.31.19.215" --master_port=7788 --node_rank=0  src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 800 --warmup_epochs 40 --blr 1.5e-4 --output_dir logs/pretrain_xlnet_base_patch16_224_tar81 --mask_ratio 0.99 --num_targets 81
+
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_tar81/checkpoint-399.pth --batch_size 32 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+
+```
