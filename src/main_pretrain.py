@@ -85,6 +85,8 @@ def get_args_parser():
     parser.add_argument('--pred_pos_smoothing', default=0., type=float,
                         help='label smoothing for predicting position')
     parser.add_argument('--g_depth', default=0, type=int)
+    parser.add_argument('--alpha', default=0., type=float)
+
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
@@ -104,7 +106,7 @@ def get_args_parser():
     parser.add_argument('--data_path', default=None, type=str,
                         help='dataset path')
 
-    parser.add_argument('--output_dir', default='./logs/',
+    parser.add_argument('--output_dir', default='./newlogs/',
                         help='path where to save, empty for no saving')
     parser.add_argument('--tag', default=None, type=str)
     parser.add_argument('--device', default='cuda',

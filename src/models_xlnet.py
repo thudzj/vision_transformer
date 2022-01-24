@@ -137,6 +137,9 @@ class XLNetViT(nn.Module):
         else:
             self.head = nn.Linear(embed_dim, patch_size**2 * in_chans, bias=True)
 
+        self.norm_2 = norm_layer(embed_dim)
+        self.head_2 = nn.Linear(embed_dim, 1000, bias=True)
+
         if not pred_pos:
             self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
             torch.nn.init.normal_(self.mask_token, std=.02)
@@ -245,6 +248,7 @@ class XLNetViT(nn.Module):
             for blk in self.blocks:
                 x_g = blk(x_g, select_kv=x.shape[1], attn_mask=attn_mask)
             g = x_g[:, x.shape[1]:]
+            y_feature = x_g[:, 0, :]
         else:
             attn_mask1 = attn_mask[:num_seen + num_targets]
             attn_mask2 = attn_mask[num_seen + num_targets:]
@@ -257,17 +261,18 @@ class XLNetViT(nn.Module):
                 x = self.blocks[lyr](x, attn_mask=attn_mask1)
 
             g = self.g_blocks[-1](g, x, attn_mask=attn_mask2)
+            y_feature = x[:, 0, :]
 
-        g = self.norm(g)
-        g = self.head(g)
-        return g, ids_shuffle
+        g = self.head(self.norm(g))
+        y_logits = self.head_2(self.norm_2(y_feature))
+        return g, ids_shuffle, y_logits
 
     def forward(self, imgs, mask_ratio=1, num_targets=None, attn_mask=None):
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
 
-        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
+        pred, ids_shuffle, y_logits = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
         target_indices = ids_shuffle[:, num_seen:num_seen + num_targets]
 
         if self.pred_pos:
@@ -280,7 +285,6 @@ class XLNetViT(nn.Module):
                           / 2. / (self.pred_pos_smoothing + 1e-8))
             target = new_labels.view(target_indices.shape[0], target_indices.shape[1], -1)
             target = target / torch.sum(target, dim=-1, keepdim=True)
-
             # ce loss
             loss = - torch.sum(pred.log_softmax(-1) * target, dim=-1).mean()
         else:
@@ -291,7 +295,8 @@ class XLNetViT(nn.Module):
                 target = (target - mean) / (var + 1.e-6)**.5
 
             loss = ((pred - target) ** 2).mean()
-        return loss, pred, target_indices
+
+        return loss, pred, target_indices, y_logits
 
 
 def xlnet_vit_base_patch16(**kwargs):

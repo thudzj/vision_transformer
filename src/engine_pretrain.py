@@ -46,6 +46,8 @@ def train_one_epoch(model: torch.nn.Module,
                                  torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
         attn_mask = torch.concat([
             torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
+        attn_mask[0] = 1
+        attn_mask[1:, 0] = 0
         if epoch == 0:
             print("Training attention mask")
             with np.printoptions(threshold=sys.maxsize, linewidth=10000):
@@ -54,43 +56,57 @@ def train_one_epoch(model: torch.nn.Module,
     else:
         attn_mask = None
 
-    for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, labels) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
         samples = samples.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            loss, _, _ = model(samples, mask_ratio=args.mask_ratio,
-                               num_targets=args.num_targets, attn_mask=attn_mask)
+            if 'xlnet' in args.model:
+                loss, _, _, y_logits = model(samples, mask_ratio=args.mask_ratio,
+                                             num_targets=args.num_targets, attn_mask=attn_mask)
+                ce_loss = torch.nn.functional.cross_entropy(y_logits, labels)
+            else:
+                loss, _, _ = model(samples, mask_ratio=args.mask_ratio,
+                                   num_targets=args.num_targets, attn_mask=attn_mask)
+                ce_loss = torch.tensor(0.)
 
         loss_value = loss.item()
+        ce_loss_value = ce_loss.item()
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
 
+        loss = loss + ce_loss * args.alpha
+
         loss = loss / accum_iter
         loss_scaler(loss, optimizer, parameters=model.parameters(),
                     update_grad=(data_iter_step + 1) % accum_iter == 0)
+
         if (data_iter_step + 1) % accum_iter == 0:
             optimizer.zero_grad()
 
         torch.cuda.synchronize()
 
         metric_logger.update(loss=loss_value)
-
+        metric_logger.update(ce_loss=ce_loss_value)
         lr = optimizer.param_groups[0]["lr"]
         metric_logger.update(lr=lr)
 
         loss_value_reduce = misc.all_reduce_mean(loss_value)
+        ce_loss_value_reduce = misc.all_reduce_mean(ce_loss_value)
+
         if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
             log_writer.write_scalars(
               len(data_loader) * epoch + data_iter_step,
               dict(
                   loss=loss_value_reduce,
+                  ce_loss=ce_loss_value_reduce,
                   lr=lr))
 
     # gather the stats from all processes
@@ -110,6 +126,8 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
                                  torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
         attn_mask = torch.concat([
             torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
+        attn_mask[0] = 1
+        attn_mask[1:, 0] = 0
         attn_mask = attn_mask.bool().to(device)
     else:
         attn_mask = None
@@ -121,7 +139,7 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
     img = next(iter(data_loader_val))[0]
     img = img.to(device, non_blocking=True)
 
-    _, outputs, target_indices = model(img, mask_ratio=args.mask_ratio, attn_mask=attn_mask)
+    _, outputs, target_indices, _ = model(img, mask_ratio=args.mask_ratio, attn_mask=attn_mask)
     if args.pred_pos:
         recon = outputs.argmax(-1)
         recon_ = []

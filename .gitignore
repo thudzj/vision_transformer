@@ -4,5 +4,6 @@ __pycache__/
 /.vscode
 /.env
 /logs
+newlogs
 /jax_logs
 .DS_Store
