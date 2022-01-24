@@ -86,6 +86,7 @@ def get_args_parser():
                         help='label smoothing for predicting position')
     parser.add_argument('--g_depth', default=0, type=int)
     parser.add_argument('--alpha', default=0., type=float)
+    parser.add_argument('--one_extra_layer', default=False, action='store_true')
 
 
     # Optimizer parameters
@@ -223,7 +224,8 @@ def main(args):
             pred_pos=args.pred_pos,
             pred_pos_smoothing=args.pred_pos_smoothing,
             g_depth=args.g_depth,
-            span=args.span)
+            span=args.span,
+            one_extra_layer=args.one_extra_layer)
         print("Num_seen", int(model.patch_embed.num_patches * (1 - args.mask_ratio)))
 
     model.to(device)

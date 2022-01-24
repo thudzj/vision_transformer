@@ -110,7 +110,7 @@ class XLNetViT(nn.Module):
                  embed_dim=1024, depth=24, num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm,
                  norm_pix_loss=False, pred_pos=False, pred_pos_smoothing=0.,
-                 g_depth=0, span=[1]):
+                 g_depth=0, span=[1], one_extra_layer=False):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -125,6 +125,8 @@ class XLNetViT(nn.Module):
             Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
             for i in range(depth)])
 
+        if one_extra_layer:
+            self.extra_block = Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
 
         if g_depth > 0:
             self.g_blocks = nn.ModuleList([
@@ -152,6 +154,7 @@ class XLNetViT(nn.Module):
         self.pred_pos = pred_pos
         self.pred_pos_smoothing = pred_pos_smoothing
         self.g_depth = g_depth
+        self.one_extra_layer = one_extra_layer
 
         self.initialize_weights()
 
@@ -247,8 +250,12 @@ class XLNetViT(nn.Module):
             x_g = torch.cat([x, g], 1)
             for blk in self.blocks:
                 x_g = blk(x_g, select_kv=x.shape[1], attn_mask=attn_mask)
+
             g = x_g[:, x.shape[1]:]
             y_feature = x_g[:, 0, :]
+
+            if self.one_extra_layer:
+                g = self.extra_block(g, x_g[:, :x.shape[1]], attn_mask[num_seen + num_targets:])
         else:
             attn_mask1 = attn_mask[:num_seen + num_targets]
             attn_mask2 = attn_mask[num_seen + num_targets:]
