@@ -255,7 +255,7 @@ class XLNetViT(nn.Module):
             y_feature = x_g[:, 0, :]
 
             if self.one_extra_layer:
-                g = self.extra_block(g, x_g[:, :x.shape[1]], attn_mask[num_seen + num_targets:])
+                g = self.extra_block(g, x_g[:, :x.shape[1]], attn_mask=attn_mask[num_seen + num_targets:])
         else:
             attn_mask1 = attn_mask[:num_seen + num_targets]
             attn_mask2 = attn_mask[num_seen + num_targets:]
