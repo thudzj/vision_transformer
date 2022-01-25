@@ -38,13 +38,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     accum_iter = args.accum_iter
 
     if args.ar:
-        # num_seen = int(model.module.patch_embed.num_patches * (1 - args.mask_ratio))
-        # num_targets = args.num_targets
-        # attn_mask = torch.concat([torch.zeros(num_seen + 1, num_targets - 1),
-        #                          torch.ones(num_targets - 1, num_targets - 1).tril(),
-        #                          torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
-        # attn_mask = torch.concat([
-        #     torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
         attn_mask = torch.ones(1 + model.module.patch_embed.num_patches, 1 + model.module.patch_embed.num_patches).tril()
         attn_mask[0] = 1
         attn_mask[1:, 0] = 0
@@ -134,6 +127,14 @@ def evaluate(data_loader, model, device):
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
+    if model.module.ar:
+        attn_mask = torch.ones(1 + model.module.patch_embed.num_patches, 1 + model.module.patch_embed.num_patches).tril()
+        attn_mask[0] = 1
+        attn_mask[1:, 0] = 0
+        attn_mask = attn_mask.bool().to(device)
+    else:
+        attn_mask = None
+
     # switch to evaluation mode
     model.eval()
 
@@ -145,7 +146,10 @@ def evaluate(data_loader, model, device):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(images)
+            if model.module.ar:
+                output, _ = model(images, attn_mask=attn_mask)
+            else:
+                output = model(images)
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
