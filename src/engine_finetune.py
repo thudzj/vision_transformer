@@ -21,6 +21,8 @@ from timm.utils import accuracy
 import util.misc as misc
 import util.lr_sched as lr_sched
 
+import numpy as np
+
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -34,6 +36,25 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     print_freq = 20
 
     accum_iter = args.accum_iter
+
+    if args.ar:
+        # num_seen = int(model.module.patch_embed.num_patches * (1 - args.mask_ratio))
+        # num_targets = args.num_targets
+        # attn_mask = torch.concat([torch.zeros(num_seen + 1, num_targets - 1),
+        #                          torch.ones(num_targets - 1, num_targets - 1).tril(),
+        #                          torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
+        # attn_mask = torch.concat([
+        #     torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
+        attn_mask = torch.ones(1 + model.module.patch_embed.num_patches, 1 + model.module.patch_embed.num_patches).tril()
+        attn_mask[0] = 1
+        attn_mask[1:, 0] = 0
+        if epoch == 0:
+            print("Training attention mask")
+            with np.printoptions(threshold=sys.maxsize, linewidth=10000):
+                print(attn_mask.data.cpu().numpy())
+        attn_mask = attn_mask.bool().to(device)
+    else:
+        attn_mask = None
 
     optimizer.zero_grad()
 
@@ -53,10 +74,18 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             samples, targets = mixup_fn(samples, targets)
 
         with torch.cuda.amp.autocast():
-            outputs = model(samples)
-            loss = criterion(outputs, targets)
+            if args.ar:
+                outputs, ar_loss = model(samples, attn_mask=attn_mask)
+                loss = criterion(outputs, targets)
+            else:
+                outputs = model(samples)
+                loss = criterion(outputs, targets)
+                ar_loss = torch.tensor(0.).to(device)
 
         loss_value = loss.item()
+        ar_loss_value = ar_loss.item()
+
+        loss = loss + ar_loss * args.alpha
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -72,6 +101,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         torch.cuda.synchronize()
 
         metric_logger.update(loss=loss_value)
+        metric_logger.update(ar_loss=ar_loss_value)
         min_lr = 10.
         max_lr = 0.
         for group in optimizer.param_groups:
@@ -81,12 +111,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         metric_logger.update(lr=max_lr)
 
         loss_value_reduce = misc.all_reduce_mean(loss_value)
+        ar_loss_value_reduce = misc.all_reduce_mean(ar_loss_value)
         if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
             """ We use epoch_1000x as the x-axis in tensorboard.
             This calibrates different curves when batch size changes.
             """
             epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
             log_writer.add_scalar('loss', loss_value_reduce, epoch_1000x)
+            log_writer.add_scalar('ar_loss', ar_loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', max_lr, epoch_1000x)
 
     # gather the stats from all processes

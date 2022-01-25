@@ -14,29 +14,13 @@ from functools import partial
 import torch
 import torch.nn as nn
 
-from timm.models.vision_transformer import PatchEmbed
-
+from timm.models.vision_transformer import PatchEmbed, Mlp
+from timm.models.layers import DropPath, trunc_normal_
 from util.pos_embed import get_2d_sincos_pos_embed
 
 import numpy as np
 
-class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
 
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
@@ -101,6 +85,8 @@ class Block(nn.Module):
         x = x + self.drop_path(self.attn(self.norm1(x), x2 if x2 is None else self.norm1(x2), select_kv, attn_mask))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
+
+
 
 
 class XLNetViT(nn.Module):

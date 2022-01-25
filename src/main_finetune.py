@@ -122,8 +122,8 @@ def get_args_parser():
     parser.add_argument('--nb_classes', default=1000, type=int,
                         help='number of the classification types')
 
-    # parser.add_argument('--output_dir', default='./logs/ft',
-                        # help='path where to save, empty for no saving')
+    parser.add_argument('--output_dir', default=None,
+                        help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -149,6 +149,10 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
+
+
+    parser.add_argument('--ar', action='store_true')
+    parser.add_argument('--alpha', default=0.1, type=float)
 
     return parser
 
@@ -235,6 +239,7 @@ def main(args):
         num_classes=args.nb_classes,
         drop_path_rate=args.drop_path,
         global_pool=args.global_pool,
+        ar=args.ar,
     )
 
     if args.finetune and not args.eval:
@@ -255,10 +260,14 @@ def main(args):
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
 
-        if args.global_pool:
-            assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
-        else:
-            assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
+        # if args.global_pool:
+        #     if args.ar:
+        #         assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias',
+        #                                          'head_2.weight', 'head_2.bias', 'norm_2.weight', 'norm_2.bias'}
+        #     else:
+        #         assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
+        # else:
+        #     assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
 
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
@@ -358,7 +367,8 @@ def main(args):
 if __name__ == '__main__':
     args = get_args_parser()
     args = args.parse_args()
-    args.output_dir = '/'.join(args.finetune.split('/')[:-1]).replace('pretrain', 'ft')
+    if args.output_dir is None:
+        args.output_dir = '/'.join(args.finetune.split('/')[:-1]).replace('pretrain', 'ft')
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     main(args)
