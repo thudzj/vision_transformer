@@ -46,6 +46,8 @@ def train_one_epoch(model: torch.nn.Module,
                                  torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
         attn_mask = torch.concat([
             torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
+        attn_mask[0] = 1
+        attn_mask[1:, 0] = 0
         if epoch == 0:
             print("Training attention mask")
             with np.printoptions(threshold=sys.maxsize, linewidth=10000):
@@ -110,6 +112,8 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
                                  torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
         attn_mask = torch.concat([
             torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
+        attn_mask[0] = 1
+        attn_mask[1:, 0] = 0
         attn_mask = attn_mask.bool().to(device)
     else:
         attn_mask = None
