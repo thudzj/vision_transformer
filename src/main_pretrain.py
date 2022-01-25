@@ -85,7 +85,7 @@ def get_args_parser():
     parser.add_argument('--pred_pos_smoothing', default=0., type=float,
                         help='label smoothing for predicting position')
     parser.add_argument('--g_depth', default=0, type=int)
-    parser.add_argument('--alpha', default=0., type=float)
+    # parser.add_argument('--alpha', default=0., type=float)
     parser.add_argument('--one_extra_layer', default=False, action='store_true')
 
 

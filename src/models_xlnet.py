@@ -139,8 +139,8 @@ class XLNetViT(nn.Module):
         else:
             self.head = nn.Linear(embed_dim, patch_size**2 * in_chans, bias=True)
 
-        self.norm_2 = norm_layer(embed_dim)
-        self.head_2 = nn.Linear(embed_dim, 1000, bias=True)
+        # self.norm_2 = norm_layer(embed_dim)
+        # self.head_2 = nn.Linear(embed_dim, 1000, bias=True)
 
         if not pred_pos:
             self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
@@ -252,7 +252,7 @@ class XLNetViT(nn.Module):
                 x_g = blk(x_g, select_kv=x.shape[1], attn_mask=attn_mask)
 
             g = x_g[:, x.shape[1]:]
-            y_feature = x_g[:, 0, :]
+            # y_feature = x_g[:, 0, :]
 
             if self.one_extra_layer:
                 g = self.extra_block(g, x_g[:, :x.shape[1]], attn_mask=attn_mask[num_seen + num_targets:])
@@ -268,18 +268,18 @@ class XLNetViT(nn.Module):
                 x = self.blocks[lyr](x, attn_mask=attn_mask1)
 
             g = self.g_blocks[-1](g, x, attn_mask=attn_mask2)
-            y_feature = x[:, 0, :]
+            # y_feature = x[:, 0, :]
 
         g = self.head(self.norm(g))
-        y_logits = self.head_2(self.norm_2(y_feature))
-        return g, ids_shuffle, y_logits
+        # y_logits = self.head_2(self.norm_2(y_feature))
+        return g, ids_shuffle #, y_logits
 
     def forward(self, imgs, mask_ratio=1, num_targets=None, attn_mask=None):
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
 
-        pred, ids_shuffle, y_logits = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
+        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
         target_indices = ids_shuffle[:, num_seen:num_seen + num_targets]
 
         if self.pred_pos:
@@ -303,7 +303,7 @@ class XLNetViT(nn.Module):
 
             loss = ((pred - target) ** 2).mean()
 
-        return loss, pred, target_indices, y_logits
+        return loss, pred, target_indices#, y_logits
 
 
 def xlnet_vit_base_patch16(**kwargs):

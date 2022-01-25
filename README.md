@@ -142,14 +142,12 @@ python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 src/ma
 
 ## xlnet
 ```
-src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49
-
-src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49 --one_extra_layer --tag oel
 ```
 
 ## xlnet2:
 ```
-NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py  --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2 --alpha 1 --tag type2
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py  --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49 --pred_pos --pred_pos_smoothing 0.2 --tag type2 --one_extra_layer
 ```
 
 ## xlnet + clf
