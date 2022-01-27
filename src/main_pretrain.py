@@ -80,9 +80,8 @@ def get_args_parser():
 
     parser.add_argument('--num_targets', default=None, type=int,
                         help='number of the visual tokens/patches to predict')
-    parser.add_argument('--pred_pos', default=False, action='store_true',
-                        help='to predict position')
-    parser.add_argument('--pred_pos_smoothing', default=0., type=float,
+    parser.add_argument('--pred_pos_prob', default=0., type=float)
+    parser.add_argument('--pred_pos_smoothing', default=0.1, type=float,
                         help='label smoothing for predicting position')
     parser.add_argument('--g_depth', default=0, type=int)
     # parser.add_argument('--alpha', default=0., type=float)
@@ -161,23 +160,23 @@ def main(args):
     cudnn.benchmark = True
 
     # simple augmentation
-    if 'xlnet' in args.model and args.pred_pos:
-        transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.RandomApply([GaussianBlur([0.1, 2.0])], p=0.5),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-    else:
-        transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
+    # if 'xlnet' in args.model and args.pred_pos:
+    #     transform_train = transforms.Compose([
+    #         transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+    #         transforms.RandomHorizontalFlip(),
+    #         transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
+    #         transforms.RandomGrayscale(p=0.2),
+    #         transforms.RandomApply([GaussianBlur([0.1, 2.0])], p=0.5),
+    #         transforms.ToTensor(),
+    #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    #     ])
+    # else:
+    transform_train = transforms.Compose([
+        transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
     dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     print(dataset_train)
@@ -221,8 +220,8 @@ def main(args):
     elif 'xlnet' in args.model:
         model = models_xlnet.__dict__[args.model](
             norm_pix_loss=args.norm_pix_loss,
-            pred_pos=args.pred_pos,
-            pred_pos_smoothing=args.pred_pos_smoothing,
+            # pred_pos=args.pred_pos,
+            # pred_pos_smoothing=args.pred_pos_smoothing,
             g_depth=args.g_depth,
             span=args.span,
             one_extra_layer=args.one_extra_layer)

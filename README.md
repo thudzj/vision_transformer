@@ -181,7 +181,17 @@ src/main_finetune.py --finetune newlogs/pretrain_xlnet_base_patch16_224_oel_m0.8
 
 
 ------------------ return to the previous version -------------------
-mask_ratio 0.85 + span 1 2 4 7 14
+pred_pos_prob 0.2
 ```
-src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag m0.85_span124714  --mask_ratio 0.85 --num_targets 49 --span 1 2 4 7 14
+src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49 --pred_pos_prob 0.2 --pred_pos_smoothing 0.1 --tag posprob0.2
+```
+
+mask_ratio 0.85 pred_pos_prob 0.5
+```
+src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.85 --num_targets 49 --pred_pos_prob 0.5 --pred_pos_smoothing 0.1 --tag m0.85_posprob0.5
+```
+
+pred_pos_prob 1
+```
+src/main_pretrain.py --batch_size 128 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49 --pred_pos_prob 1 --pred_pos_smoothing 0.1 --tag posprob1
 ```

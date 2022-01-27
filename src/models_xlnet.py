@@ -18,6 +18,7 @@ from timm.models.vision_transformer import PatchEmbed, Mlp
 from timm.models.layers import DropPath, trunc_normal_
 from util.pos_embed import get_2d_sincos_pos_embed
 
+import sys
 import numpy as np
 
 
@@ -95,7 +96,7 @@ class XLNetViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3,
                  embed_dim=1024, depth=24, num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm,
-                 norm_pix_loss=False, pred_pos=False, pred_pos_smoothing=0.,
+                 norm_pix_loss=False,
                  g_depth=0, span=[1], one_extra_layer=False):
         super().__init__()
 
@@ -104,6 +105,7 @@ class XLNetViT(nn.Module):
         self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
         num_patches = self.patch_embed.num_patches
 
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False)  # fixed sin-cos embedding
 
@@ -119,26 +121,18 @@ class XLNetViT(nn.Module):
                 Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
                 for i in range(g_depth)])
 
-        self.norm = norm_layer(embed_dim)
-        if pred_pos:
-            self.head = nn.Linear(embed_dim, num_patches, bias=True)
-        else:
-            self.head = nn.Linear(embed_dim, patch_size**2 * in_chans, bias=True)
+        self.norm1 = norm_layer(embed_dim)
+        self.head1 = nn.Linear(embed_dim, num_patches, bias=True)
+        self.norm2 = norm_layer(embed_dim)
+        self.head2 = nn.Linear(embed_dim, patch_size**2 * in_chans, bias=True)
 
         # self.norm_2 = norm_layer(embed_dim)
         # self.head_2 = nn.Linear(embed_dim, 1000, bias=True)
 
-        if not pred_pos:
-            self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-            torch.nn.init.normal_(self.mask_token, std=.02)
-        else:
-            self.mask_token = None
         # --------------------------------------------------------------------------
 
         self.span = span
         self.norm_pix_loss = norm_pix_loss
-        self.pred_pos = pred_pos
-        self.pred_pos_smoothing = pred_pos_smoothing
         self.g_depth = g_depth
         self.one_extra_layer = one_extra_layer
 
@@ -156,6 +150,7 @@ class XLNetViT(nn.Module):
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
         torch.nn.init.normal_(self.cls_token, std=.02)
+        torch.nn.init.normal_(self.mask_token, std=.02)
 
         # initialize nn.Linear and nn.LayerNorm
         self.apply(self._init_weights)
@@ -198,14 +193,14 @@ class XLNetViT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
         return imgs
 
-    def forward_encoder(self, x, num_seen, num_targets, attn_mask):
+    def forward_encoder(self, x, num_seen, num_targets, attn_mask, pred_pos):
         # embed patches
         x_ = self.patch_embed(x)
 
         # add pos embed w/o cls token
         x = x_ + self.pos_embed[:, 1:, :]
 
-        if self.mask_token is None:
+        if pred_pos:
             g = x_
         else:
             g = (self.pos_embed[:, 1:, :] + self.mask_token).expand_as(x_)
@@ -256,28 +251,34 @@ class XLNetViT(nn.Module):
             g = self.g_blocks[-1](g, x, attn_mask=attn_mask2)
             # y_feature = x[:, 0, :]
 
-        g = self.head(self.norm(g))
+        if pred_pos:
+            g = self.head1(self.norm1(g))
+        else:
+            g = self.head2(self.norm2(g))
         # y_logits = self.head_2(self.norm_2(y_feature))
         return g, ids_shuffle #, y_logits
 
-    def forward(self, imgs, mask_ratio=1, num_targets=None, attn_mask=None):
+    def forward(self, imgs, mask_ratio=1, num_targets=None, attn_mask=None, pred_pos=False, pred_pos_smoothing=0.1):
+        # print(pred_pos)
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
 
-        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
+        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask, pred_pos)
         target_indices = ids_shuffle[:, num_seen:num_seen + num_targets]
 
-        if self.pred_pos:
+        if pred_pos:
             W = int(self.patch_embed.num_patches**.5)
             # perform label smoothing
             row_labels = torch.div(target_indices[:,:,0].reshape(-1, 1, 1), W, rounding_mode='trunc')
             col_labels = target_indices[:,:,0].reshape(-1, 1, 1) % W
             new_labels = torch.exp(-((row_labels - torch.arange(W, device=imgs.device).view(1, -1, 1)) ** 2 +
                             (col_labels - torch.arange(W, device=imgs.device).view(1, 1, -1)) ** 2)
-                          / 2. / (self.pred_pos_smoothing + 1e-8))
+                          / 2. / (pred_pos_smoothing + 1e-8))
             target = new_labels.view(target_indices.shape[0], target_indices.shape[1], -1)
             target = target / torch.sum(target, dim=-1, keepdim=True)
+            # with np.printoptions(threshold=sys.maxsize, linewidth=10000, suppress=True):
+            #     print(target[0, 0].view(14, 14).data.cpu().numpy())
             # ce loss
             loss = - torch.sum(pred.log_softmax(-1) * target, dim=-1).mean()
         else:
