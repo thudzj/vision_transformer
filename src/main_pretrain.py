@@ -107,7 +107,7 @@ def get_args_parser():
     parser.add_argument('--data_path', default=None, type=str,
                         help='dataset path')
 
-    parser.add_argument('--output_dir', default='./newlogs/',
+    parser.add_argument('--output_dir', default='./logs/',
                         help='path where to save, empty for no saving')
     parser.add_argument('--tag', default=None, type=str)
     parser.add_argument('--device', default='cuda',

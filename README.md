@@ -135,6 +135,19 @@ python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 src/ma
 
 python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_tar81/checkpoint-799.pth --batch_size 64 --accum_iter 2 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 1 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
     * Acc@1 82.588 Acc@5 96.124 loss 0.778
+
+
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_tar81/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval --output_dir logs/ft_xlnet_base_patch16_224_tar81_avgclf_alpha1 --ar --alpha 1
+    * Acc@1 81.640 Acc@5 95.773 loss 0.821  
+
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_tar81/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval --output_dir logs/ft_xlnet_base_patch16_224_tar81_avgclf_alpha0 --ar --alpha 0
+    * Acc@1 81.652 Acc@5 95.724 loss 0.827
+
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_tar81/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval --output_dir logs/ft_xlnet_base_patch16_224_tar81_clsclf_alpha0 --ar --alpha 0 --cls_token
+    * Acc@1 81.546 Acc@5 95.762 loss 0.822
+
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_tar81/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval --output_dir logs/ft_xlnet_base_patch16_224_tar81_clsclf --cls_token
+    * Acc@1 83.077 Acc@5 96.229 loss 0.769
 ```
 
 --------------------------------------------------------------------------------
@@ -143,6 +156,9 @@ python -m torch.distributed.launch --master_port 60660 --nproc_per_node=8 src/ma
 ## xlnet
 ```
 src/main_pretrain.py --batch_size 256 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.99 --num_targets 49 --one_extra_layer --tag oel
+
+src/main_finetune.py --finetune newlogs/pretrain_xlnet_base_patch16_224_oel/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 82.620 Acc@5 96.098 loss 0.782
 ```
 
 ## xlnet2:
@@ -155,4 +171,17 @@ NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=3 --node_rank
 src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --mask_ratio 0.85 --num_targets 49 --one_extra_layer --tag oel_m0.85
 
 
+src/main_finetune.py --finetune newlogs/pretrain_xlnet_base_patch16_224_oel_m0.85/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval --output_dir newlogs/ft_xlnet_base_patch16_224_oel_m0.85
+    * Acc@1 82.996 Acc@5 96.300 loss 0.759
+
+src/main_finetune.py --finetune newlogs/pretrain_xlnet_base_patch16_224_oel_m0.85/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval --output_dir newlogs/ft_xlnet_base_patch16_224_oel_m0.85_clsclf --cls_token
+    * Acc@1 82.654 Acc@5 96.184 loss 0.773
+```
+
+
+
+------------------ return to the previous version -------------------
+mask_ratio 0.85 + span 1 2 4 7 14
+```
+src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4 --tag m0.85_span124714  --mask_ratio 0.85 --num_targets 49 --span 1 2 4 7 14
 ```
