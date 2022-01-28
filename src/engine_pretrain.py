@@ -116,6 +116,7 @@ def train_one_epoch(model: torch.nn.Module,
 @torch.no_grad()
 def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, args):
 
+    pred_pos = False
     if 'xlnet' in args.model:
         num_seen = int(model.module.patch_embed.num_patches * (1 - args.mask_ratio))
         num_targets = model.module.patch_embed.num_patches - num_seen
@@ -138,20 +139,18 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
     img = img.to(device, non_blocking=True)
 
     _, outputs, target_indices = model(img, mask_ratio=args.mask_ratio, attn_mask=attn_mask,
-                                       pred_pos=False, pred_pos_smoothing=args.pred_pos_smoothing)
-    _, outputs_pos, target_indices = model(img, mask_ratio=args.mask_ratio, attn_mask=attn_mask,
-                                       pred_pos=True, pred_pos_smoothing=args.pred_pos_smoothing)
-
-    recon = outputs_pos.argmax(-1)
-    recon_ = []
-    for idx_b in range(recon.shape[0]):
-      recon_b = []
-      for idx_p in range(recon.shape[1]):
-        recon_b.append(misc.pos2img(recon[idx_b, idx_p],
-                                     grid_size[1],
-                                     patch_size[0], patch_size[1]))
-      recon_.append(np.stack(recon_b, 0).reshape(recon.shape[1], -1))
-    outputs_pos = torch.from_numpy(np.stack(recon_, 0)).to(device).type_as(img)
+                                       pred_pos=pred_pos, pred_pos_smoothing=args.pred_pos_smoothing)
+    if pred_pos:
+        recon = outputs.argmax(-1)
+        recon_ = []
+        for idx_b in range(recon.shape[0]):
+          recon_b = []
+          for idx_p in range(recon.shape[1]):
+            recon_b.append(misc.pos2img(recon[idx_b, idx_p],
+                                         grid_size[1],
+                                         patch_size[0], patch_size[1]))
+          recon_.append(np.stack(recon_b, 0).reshape(recon.shape[1], -1))
+        outputs = torch.from_numpy(np.stack(recon_, 0)).to(device).type_as(img)
 
     #save original img
     mean = torch.as_tensor([0.485, 0.456, 0.406]).to(device)[None, :, None, None]
@@ -161,7 +160,8 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
     img_squeeze = rearrange(ori_img, 'b c (h p1) (w p2) -> b (h w) (p1 p2) c', p1=patch_size[0], p2=patch_size[1])
     img_norm = (img_squeeze - img_squeeze.mean(dim=-2, keepdim=True)) / (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6)
     img_patch = rearrange(img_norm, 'b n p c -> b n (p c)')
-    img_patch.scatter_(1, target_indices, outputs)
+    if not pred_pos:
+        img_patch.scatter_(1, target_indices, outputs)
 
     #make mask
     mask = torch.ones_like(img_patch)
@@ -174,15 +174,10 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
     rec_img = rearrange(img_patch, 'b n (p c) -> b n p c', c=3)
     rec_img = rec_img * (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6) \
                 + img_squeeze.mean(dim=-2, keepdim=True)
-
-    rec_img_pos = rec_img.data.clone()
-
-    outputs_pos = outputs_pos.view(outputs_pos.shape[0], outputs_pos.shape[1], -1, 3)
-    rec_img_pos.scatter_(1, target_indices.view_as(outputs_pos), outputs_pos)
-
+    if pred_pos:
+        outputs = outputs.view(outputs.shape[0], outputs.shape[1], -1, 3)
+        rec_img.scatter_(1, target_indices.view_as(outputs), outputs)
     rec_img = rearrange(rec_img, 'b (h w) (p1 p2) c -> b c (h p1) (w p2)',
-        p1=patch_size[0], p2=patch_size[1], h=grid_size[0], w=grid_size[1])
-    rec_img_pos = rearrange(rec_img_pos, 'b (h w) (p1 p2) c -> b c (h p1) (w p2)',
         p1=patch_size[0], p2=patch_size[1], h=grid_size[0], w=grid_size[1])
 
     #save random mask img
@@ -194,6 +189,5 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
             dict(
                 samples=ori_img.permute(0, 2, 3, 1).data.cpu().numpy(),
                 vis=img_mask.permute(0, 2, 3, 1).data.cpu().numpy(),
-                recon=rec_img.permute(0, 2, 3, 1).data.cpu().numpy(),
-                recon2=rec_img_pos.permute(0, 2, 3, 1).data.cpu().numpy())
+                recon=rec_img.permute(0, 2, 3, 1).data.cpu().numpy(),)
             )
