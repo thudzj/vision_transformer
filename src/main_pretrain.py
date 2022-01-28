@@ -71,6 +71,7 @@ def get_args_parser():
 
     parser.add_argument('--mask_ratio', default=0.75, type=float,
                         help='Masking ratio (percentage of removed patches).')
+    parser.add_argument('--mask_ratio_range', default=None, type=float, nargs='+')
 
     parser.add_argument('--norm_pix_loss', action='store_true',
                         help='Use (per-patch) normalized pixels as targets for computing loss')

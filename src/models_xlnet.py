@@ -121,10 +121,8 @@ class XLNetViT(nn.Module):
                 Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
                 for i in range(g_depth)])
 
-        self.norm1 = norm_layer(embed_dim)
-        self.head1 = nn.Linear(embed_dim, num_patches, bias=True)
-        self.norm2 = norm_layer(embed_dim)
-        self.head2 = nn.Linear(embed_dim, patch_size**2 * in_chans, bias=True)
+        self.norm = norm_layer(embed_dim)
+        self.head = nn.Linear(embed_dim, patch_size**2 * in_chans, bias=True)
 
         # self.norm_2 = norm_layer(embed_dim)
         # self.head_2 = nn.Linear(embed_dim, 1000, bias=True)
@@ -193,17 +191,13 @@ class XLNetViT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
         return imgs
 
-    def forward_encoder(self, x, num_seen, num_targets, attn_mask, pred_pos):
+    def forward_encoder(self, x, num_seen, num_targets, attn_mask):
         # embed patches
         x_ = self.patch_embed(x)
 
         # add pos embed w/o cls token
         x = x_ + self.pos_embed[:, 1:, :]
-
-        if pred_pos:
-            g = x_
-        else:
-            g = (self.pos_embed[:, 1:, :] + self.mask_token).expand_as(x_)
+        g = (self.pos_embed[:, 1:, :] + self.mask_token).expand_as(x_)
 
         # permutation auto-regressive modeling
         N, L, D = x.shape  # batch, length, dim
@@ -251,44 +245,34 @@ class XLNetViT(nn.Module):
             g = self.g_blocks[-1](g, x, attn_mask=attn_mask2)
             # y_feature = x[:, 0, :]
 
-        if pred_pos:
-            g = self.head1(self.norm1(g))
-        else:
-            g = self.head2(self.norm2(g))
+        g = self.head(self.norm(g))
         # y_logits = self.head_2(self.norm_2(y_feature))
         return g, ids_shuffle #, y_logits
 
-    def forward(self, imgs, mask_ratio=1, num_targets=None, attn_mask=None, pred_pos=False, pred_pos_smoothing=0.1):
-        # print(pred_pos)
+    def forward(self, imgs, mask_ratio=1, num_targets=None):
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
 
-        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask, pred_pos)
+        attn_mask = torch.concat([torch.zeros(num_seen + 1, num_targets - 1),
+                                 torch.ones(num_targets - 1, num_targets - 1).tril(),
+                                 torch.ones(num_targets, num_targets - 1).tril(-1)], 0)
+        attn_mask = torch.concat([
+            torch.ones(num_seen + num_targets * 2, num_seen + 1), attn_mask], 1)
+        attn_mask[0] = 1
+        attn_mask[1:, 0] = 0
+        attn_mask = attn_mask.bool().to(imgs.device)
+
+        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
         target_indices = ids_shuffle[:, num_seen:num_seen + num_targets]
 
-        if pred_pos:
-            W = int(self.patch_embed.num_patches**.5)
-            # perform label smoothing
-            row_labels = torch.div(target_indices[:,:,0].reshape(-1, 1, 1), W, rounding_mode='trunc')
-            col_labels = target_indices[:,:,0].reshape(-1, 1, 1) % W
-            new_labels = torch.exp(-((row_labels - torch.arange(W, device=imgs.device).view(1, -1, 1)) ** 2 +
-                            (col_labels - torch.arange(W, device=imgs.device).view(1, 1, -1)) ** 2)
-                          / 2. / (pred_pos_smoothing + 1e-8))
-            target = new_labels.view(target_indices.shape[0], target_indices.shape[1], -1)
-            target = target / torch.sum(target, dim=-1, keepdim=True)
-            # with np.printoptions(threshold=sys.maxsize, linewidth=10000, suppress=True):
-            #     print(target[0, 0].view(14, 14).data.cpu().numpy())
-            # ce loss
-            loss = - torch.sum(pred.log_softmax(-1) * target, dim=-1).mean()
-        else:
-            target = torch.gather(self.patchify(imgs), dim=1, index=target_indices)
-            if self.norm_pix_loss:
-                mean = target.mean(dim=-1, keepdim=True)
-                var = target.var(dim=-1, keepdim=True)
-                target = (target - mean) / (var + 1.e-6)**.5
+        target = torch.gather(self.patchify(imgs), dim=1, index=target_indices)
+        if self.norm_pix_loss:
+            mean = target.mean(dim=-1, keepdim=True)
+            var = target.var(dim=-1, keepdim=True)
+            target = (target - mean) / (var + 1.e-6)**.5
 
-            loss = ((pred - target) ** 2).mean()
+        loss = ((pred - target) ** 2).mean()
 
         return loss, pred, target_indices#, y_logits
 
