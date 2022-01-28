@@ -78,6 +78,8 @@ def get_args_parser():
 
     parser.add_argument('--span', default=[1], type=int, nargs='+')
 
+    parser.add_argument('--flip', default='', type=str)
+
     parser.add_argument('--num_targets', default=None, type=int,
                         help='number of the visual tokens/patches to predict')
     parser.add_argument('--pred_pos_prob', default=0., type=float)
@@ -134,6 +136,31 @@ def get_args_parser():
     return parser
 
 
+def data_aug(flip):
+    if flip == 'both':
+        tf_ = transforms.Compose([
+            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomVerticalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+    elif flip == 'none':
+        tf_ = transforms.Compose([
+            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+    else:
+        tf_ = transforms.Compose([
+            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+    return tf_
+
 def main(args):
     misc.init_distributed_mode(args)
 
@@ -171,12 +198,7 @@ def main(args):
     #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     #     ])
     # else:
-    transform_train = transforms.Compose([
-        transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    transform_train = data_aug(args.flip)
 
     dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     print(dataset_train)
