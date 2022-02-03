@@ -80,6 +80,8 @@ def get_args_parser():
     parser.add_argument('--span', default=[1], type=int, nargs='+')
     parser.add_argument('--betas', default=[0.9, 0.95], type=float, nargs='+')
 
+    parser.add_argument('--clip_grad', default=None, type=float)
+
     parser.add_argument('--flip', default='', type=str)
 
     parser.add_argument('--num_targets', default=None, type=int,
