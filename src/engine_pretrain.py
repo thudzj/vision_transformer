@@ -47,8 +47,8 @@ def train_one_epoch(model: torch.nn.Module,
             else:
                 rng = np.random.RandomState(data_iter_step)
                 mask_ratio = rng.uniform(args.mask_ratio_range[0], args.mask_ratio_range[1])
-            if data_iter_step < 20:
-                print(data_iter_step, mask_ratio, int(model.module.patch_embed.num_patches * (1 - mask_ratio)), force=True)
+            # if data_iter_step < 20:
+            #     print(data_iter_step, mask_ratio, int(model.module.patch_embed.num_patches * (1 - mask_ratio)), force=True)
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
         samples = samples.to(device, non_blocking=True)
