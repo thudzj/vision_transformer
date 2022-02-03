@@ -78,6 +78,7 @@ def get_args_parser():
     parser.set_defaults(norm_pix_loss=False)
 
     parser.add_argument('--span', default=[1], type=int, nargs='+')
+    parser.add_argument('--betas', default=[0.9, 0.95], type=float, nargs='+')
 
     parser.add_argument('--flip', default='', type=str)
 
@@ -272,7 +273,7 @@ def main(args):
 
     # following timm: set wd as 0 for bias and norm layers
     param_groups = optim_factory.add_weight_decay(model_without_ddp, args.weight_decay)
-    optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
+    optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(args.betas[0], args.betas[1]))
     print(optimizer)
     loss_scaler = NativeScaler()
 
