@@ -18,6 +18,7 @@ from timm.models.vision_transformer import PatchEmbed, Mlp
 from timm.models.layers import DropPath, trunc_normal_
 from util.pos_embed import get_2d_sincos_pos_embed
 
+import math
 import sys
 import numpy as np
 
@@ -97,7 +98,8 @@ class XLNetViT(nn.Module):
                  embed_dim=1024, depth=24, num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm,
                  norm_pix_loss=False,
-                 g_depth=0, span=[1], one_extra_layer=False):
+                 g_depth=0, span=[1], one_extra_layer=False, avg_mask_token=False,
+                 structured_ctx=False):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -133,6 +135,8 @@ class XLNetViT(nn.Module):
         self.norm_pix_loss = norm_pix_loss
         self.g_depth = g_depth
         self.one_extra_layer = one_extra_layer
+        self.avg_mask_token = avg_mask_token
+        self.structured_ctx = structured_ctx
 
         self.initialize_weights()
 
@@ -197,15 +201,38 @@ class XLNetViT(nn.Module):
 
         # add pos embed w/o cls token
         x = x_ + self.pos_embed[:, 1:, :]
-        g = (self.pos_embed[:, 1:, :] + self.mask_token).expand_as(x_)
+        if self.avg_mask_token:
+            g = self.pos_embed[:, 1:, :] + x_.mean(1)[:, None, :]
+        else:
+            g = (self.pos_embed[:, 1:, :] + self.mask_token).expand_as(x_)
 
         # permutation auto-regressive modeling
         N, L, D = x.shape  # batch, length, dim
 
-        span = self.span[torch.randint(0, len(self.span), (1,)).item()]
-        noise = torch.rand(N, L // span, device=x.device)  # noise in [0, 1]
-        ids_shuffle = ((torch.argsort(noise, dim=1) * span).unsqueeze(-1) + torch.arange(0, span, device=x.device)).flatten(1).long()
-        # print(span, ids_shuffle[:4, :15].data.cpu().numpy())
+        if self.structured_ctx:
+            tmp = int(math.sqrt(self.patch_embed.num_patches))
+            hs = torch.randint(max(1, int(math.ceil(float(num_seen) / tmp))), min(tmp, num_seen) + 1, (N,))
+            ws = (float(num_seen) / hs).ceil().long()
+
+            ws_start = ((tmp - ws + 1) * torch.rand(N)).int()
+            hs_start = ((tmp - hs + 1) * torch.rand(N)).int()
+
+            tmpm = torch.arange(0, tmp)[:, None] * tmp + torch.arange(0, tmp)[None, :]
+            ids_ctx, idx_others = [], []
+            for ii in range(N):
+                ids_ctx.append((tmpm + ws_start[ii].item() * tmp + hs_start[ii].item())[:ws[ii].item(), :hs[ii].item()].flatten()[:num_seen])
+                others = torch.from_numpy(np.setdiff1d(np.arange(self.patch_embed.num_patches), ids_ctx[-1].data.numpy())).long()
+                others = others[torch.randperm(others.shape[0])].view(others.size())
+                idx_others.append(others)
+
+            ids_ctx = torch.stack(ids_ctx)
+            idx_others = torch.stack(idx_others)
+            ids_shuffle = torch.cat([ids_ctx, idx_others], 1).to(x.device)
+        else:
+            span = self.span[torch.randint(0, len(self.span), (1,)).item()]
+            noise = torch.rand(N, L // span, device=x.device)  # noise in [0, 1]
+            ids_shuffle = ((torch.argsort(noise, dim=1) * span).unsqueeze(-1) + torch.arange(0, span, device=x.device)).flatten(1).long()
+            # print(span, ids_shuffle[:4, :15].data.cpu().numpy())
 
         # noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
         # ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove

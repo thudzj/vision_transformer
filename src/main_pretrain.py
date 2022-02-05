@@ -92,6 +92,8 @@ def get_args_parser():
     parser.add_argument('--g_depth', default=0, type=int)
     # parser.add_argument('--alpha', default=0., type=float)
     parser.add_argument('--one_extra_layer', default=False, action='store_true')
+    parser.add_argument('--avg_mask_token', default=False, action='store_true')
+    parser.add_argument('--structured_ctx', default=False, action='store_true')
 
 
     # Optimizer parameters
@@ -250,7 +252,9 @@ def main(args):
             # pred_pos_smoothing=args.pred_pos_smoothing,
             g_depth=args.g_depth,
             span=args.span,
-            one_extra_layer=args.one_extra_layer)
+            one_extra_layer=args.one_extra_layer,
+            avg_mask_token=args.avg_mask_token,
+            structured_ctx=args.structured_ctx)
         print("Num_seen", int(model.patch_embed.num_patches * (1 - args.mask_ratio)))
 
     model.to(device)
