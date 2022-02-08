@@ -26,6 +26,8 @@ import timm
 
 assert timm.__version__ == "0.3.2"  # version check
 import timm.optim.optim_factory as optim_factory
+from timm.data import create_transform
+from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
@@ -82,7 +84,7 @@ def get_args_parser():
 
     parser.add_argument('--clip_grad', default=None, type=float)
 
-    parser.add_argument('--flip', default='', type=str)
+    parser.add_argument('--da', default='', type=str)
 
     parser.add_argument('--num_targets', default=None, type=int,
                         help='number of the visual tokens/patches to predict')
@@ -142,22 +144,30 @@ def get_args_parser():
     return parser
 
 
-def data_aug(flip):
-    if flip == 'both':
+def data_aug(da):
+    if da == 'manual':
         tf_ = transforms.Compose([
             transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
             transforms.RandomHorizontalFlip(),
-            transforms.RandomVerticalFlip(),
+            transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomApply([GaussianBlur([0.1, 2.0])], p=0.5),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
-
-    elif flip == 'none':
-        tf_ = transforms.Compose([
-            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
+    elif 'aa' in da:
+        aa = da.replace("aa-", "")
+        tf_ = transform = create_transform(
+            input_size=args.input_size,
+            scale=(0.2, 1.0),
+            is_training=True,
+            color_jitter=0,
+            auto_augment=aa,
+            interpolation='bicubic',
+            re_prob=0,
+            mean=IMAGENET_DEFAULT_MEAN,
+            std=IMAGENET_DEFAULT_STD,
+        )
     else:
         tf_ = transforms.Compose([
             transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
@@ -192,19 +202,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    # simple augmentation
-    # if 'xlnet' in args.model and args.pred_pos:
-    #     transform_train = transforms.Compose([
-    #         transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-    #         transforms.RandomHorizontalFlip(),
-    #         transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
-    #         transforms.RandomGrayscale(p=0.2),
-    #         transforms.RandomApply([GaussianBlur([0.1, 2.0])], p=0.5),
-    #         transforms.ToTensor(),
-    #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    #     ])
-    # else:
-    transform_train = data_aug(args.flip)
+    transform_train = data_aug(args.da)
 
     dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     print(dataset_train)
