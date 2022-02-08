@@ -67,12 +67,11 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             samples, targets = mixup_fn(samples, targets)
 
         with torch.cuda.amp.autocast():
+            outputs = model(samples)
+            loss = criterion(outputs, targets)
             if args.ar:
-                outputs, ar_loss = model(samples, attn_mask=attn_mask)
-                loss = criterion(outputs, targets)
+                ar_loss = model(samples, attn_mask=attn_mask)
             else:
-                outputs = model(samples)
-                loss = criterion(outputs, targets)
                 ar_loss = torch.tensor(0.).to(device)
 
         loss_value = loss.item()

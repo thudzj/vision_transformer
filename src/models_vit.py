@@ -134,16 +134,17 @@ class VisionTransformer(nn.Module):
 
             generations = self.head_2(self.norm_2(x[:, 1:-1, :]))
             loss = ((generations - targets) ** 2).mean()
+            return loss
 
-            if self.global_pool:
-                x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
-                outcome = self.fc_norm(x)
-            else:
-                x = self.norm(x)
-                outcome = x[:, 0]
-            outcome = self.head(outcome)
+            # if self.global_pool:
+            #     x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
+            #     outcome = self.fc_norm(x)
+            # else:
+            #     x = self.norm(x)
+            #     outcome = x[:, 0]
+            # outcome = self.head(outcome)
 
-            return outcome, loss
+            # return outcome, loss
         else:
             x = self.forward_features(x)
             x = self.head(x)

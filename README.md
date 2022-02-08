@@ -184,8 +184,28 @@ src/main_finetune.py --finetune newlogs/pretrain_xlnet_base_patch16_224_oel_m0.8
 
 ```
 src/main_pretrain.py --batch_size 64 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio_range 0.5 0.99 --num_targets 49 --tag m0.5-0.99
-
-
 src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.5-0.99/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
     * Acc@1 83.133 Acc@5 96.271 loss 0.766
+
+
+src/main_pretrain.py --batch_size 64 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio_range 0.5 0.99 --num_targets 49 --tag m0.5-0.99-structuredctx --structured_ctx
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.5-0.99-structuredctx/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 83.141 Acc@5 96.387 loss 0.754
+    [11:08:00.131382] Accuracy of the network on the 50000 test images: 83.1%
+    [11:08:00.131415] Max accuracy: 83.18%
+
+
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_pretrain.py --batch_size 64 --accum_iter 4 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio_range 0.5 0.99 --num_targets 49 --tag m0.5-0.99_avgmask --avg_mask_token
+NCCL_SOCKET_IFNAME=ib0 python -m torch.distributed.launch --nnodes=2 --node_rank=0 --nproc_per_node=8 --master_addr="11.4.3.28" --master_port=7788 src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.5-0.99_avgmask/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 82.802 Acc@5 96.220 loss 0.776  
+```
+
+
+```
+src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.87 --num_targets 49 --tag m0.87-structuredctx --structured_ctx
+
+
+src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx --structured_ctx
+
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-structuredctx/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 ```
