@@ -56,7 +56,6 @@ class VisionTransformer(nn.Module):
         # Classifier head
         self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-        self.ar = ar
         if ar:
             # self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
             # torch.nn.init.normal_(self.mask_token, std=.02)
@@ -115,8 +114,8 @@ class VisionTransformer(nn.Module):
 
         return outcome
 
-    def forward(self, x, attn_mask=None):
-        if self.ar:
+    def forward(self, x, attn_mask=None, ar=False):
+        if ar:
             targets = self.patchify(x)
             targets = (targets - targets.mean(dim=-1, keepdim=True)) / (targets.var(dim=-1, keepdim=True) + 1.e-6)**.5
             targets = targets[:, 1:, :]

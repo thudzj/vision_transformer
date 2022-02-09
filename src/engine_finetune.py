@@ -70,7 +70,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             outputs = model(samples)
             loss = criterion(outputs, targets)
             if args.ar:
-                ar_loss = model(samples, attn_mask=attn_mask)
+                ar_loss = model(samples, attn_mask=attn_mask, ar=True)
             else:
                 ar_loss = torch.tensor(0.).to(device)
 
@@ -126,14 +126,6 @@ def evaluate(data_loader, model, device):
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
-    if model.module.ar:
-        attn_mask = torch.ones(1 + model.module.patch_embed.num_patches, 1 + model.module.patch_embed.num_patches).tril()
-        attn_mask[0] = 1
-        attn_mask[1:, 0] = 0
-        attn_mask = attn_mask.bool().to(device)
-    else:
-        attn_mask = None
-
     # switch to evaluation mode
     model.eval()
 
@@ -145,10 +137,7 @@ def evaluate(data_loader, model, device):
 
         # compute output
         with torch.cuda.amp.autocast():
-            if model.module.ar:
-                output, _ = model(images, attn_mask=attn_mask)
-            else:
-                output = model(images)
+            output = model(images)
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))

@@ -22,6 +22,54 @@ import math
 import sys
 import numpy as np
 
+import random
+import math
+import numpy as np
+
+def beit_mask(height, width, num_masks, min_num_patches=16, max_num_patches=None,
+              min_aspect=0.3, max_aspect=None):
+
+    min_num_patches = min(min_num_patches, num_masks)
+    max_num_patches = num_masks if max_num_patches is None else max_num_patches
+    max_aspect = max_aspect or 1 / min_aspect
+    def _mask(mask, max_mask_patches):
+        delta = 0
+        while 1:
+            target_area = random.uniform(min_num_patches, max_mask_patches)
+            aspect_ratio = math.exp(random.uniform(math.log(min_aspect), math.log(max_aspect)))
+            h = int(round(math.sqrt(target_area * aspect_ratio)))
+            w = int(round(math.sqrt(target_area / aspect_ratio)))
+            if w < width and h < height:
+                top = random.randint(0, height - h)
+                left = random.randint(0, width - w)
+
+                num_masked = mask[top: top + h, left: left + w].sum()
+                # Overlap
+                if 0 < h * w - num_masked <= max_mask_patches:
+                    for i in range(top, top + h):
+                        for j in range(left, left + w):
+                            if mask[i, j] == 0:
+                                mask[i, j] = 1
+                                delta += 1
+
+                if delta > 0:
+                    break
+        return delta
+
+    mask = torch.zeros(height, width, dtype=int)
+    mask_count = 0
+    while mask_count < num_masks:
+        delta = _mask(mask, num_masks - mask_count)
+        if delta == 0:
+            break
+        else:
+            mask_count += delta
+
+    ids_ctx = mask.view(-1).nonzero().view(-1)
+    others = (1 - mask.view(-1)).nonzero().view(-1)
+    others = others[torch.randperm(others.shape[0])].view(others.size())
+    ids_shuffle = torch.cat([ids_ctx, others])
+    return ids_shuffle
 
 
 class Attention(nn.Module):
@@ -99,7 +147,7 @@ class XLNetViT(nn.Module):
                  mlp_ratio=4., norm_layer=nn.LayerNorm,
                  norm_pix_loss=False,
                  g_depth=0, span=[1], one_extra_layer=False, avg_mask_token=False,
-                 structured_ctx=False):
+                 structured_ctx=False, beit_ctx=False):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -137,6 +185,7 @@ class XLNetViT(nn.Module):
         self.one_extra_layer = one_extra_layer
         self.avg_mask_token = avg_mask_token
         self.structured_ctx = structured_ctx
+        self.beit_ctx = beit_ctx
 
         self.initialize_weights()
 
@@ -209,7 +258,10 @@ class XLNetViT(nn.Module):
         # permutation auto-regressive modeling
         N, L, D = x.shape  # batch, length, dim
 
-        if self.structured_ctx:
+        if self.beit_ctx:
+            tmp = int(math.sqrt(self.patch_embed.num_patches))
+            ids_shuffle = torch.stack([beit_mask(tmp, tmp, num_seen) for _ in range(N)]).to(x.device)
+        elif self.structured_ctx:
             tmp = int(math.sqrt(self.patch_embed.num_patches))
             hs = torch.randint(max(1, int(math.ceil(float(num_seen) / tmp))), min(tmp, num_seen) + 1, (N,))
             ws = (float(num_seen) / hs).ceil().long()
