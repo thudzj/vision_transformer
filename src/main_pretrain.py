@@ -326,8 +326,8 @@ def main(args):
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-    # if 'xlnet' in args.model:
-    #     plot_evaluation_results(model, data_loader_val, device, -1, log_writer, args)
+    if 'xlnet' in args.model:
+        plot_evaluation_results(model, data_loader_val, device, -1, log_writer, args)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
