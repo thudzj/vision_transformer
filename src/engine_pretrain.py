@@ -36,6 +36,9 @@ def train_one_epoch(model: torch.nn.Module,
 
     accum_iter = args.accum_iter
 
+    patch_aug = (args.da == 'patch_aug')
+    CJ = torchvision.transforms.ColorJitter(0.8, 0.8, 0.8, 0.2) if patch_aug else None
+
     optimizer.zero_grad()
 
     for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
@@ -57,7 +60,7 @@ def train_one_epoch(model: torch.nn.Module,
         samples = samples.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            loss, _, _ = model(samples, patch_aug=(args.da == 'patch_aug'), mask_ratio=mask_ratio, num_targets=args.num_targets)
+            loss, _, _ = model(samples, patch_aug=patch_aug, CJ=CJ, mask_ratio=mask_ratio, num_targets=args.num_targets)
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):

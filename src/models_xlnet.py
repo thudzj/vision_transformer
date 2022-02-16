@@ -329,7 +329,7 @@ class XLNetViT(nn.Module):
         # y_logits = self.head_2(self.norm_2(y_feature))
         return g, ids_shuffle #, y_logits
 
-    def forward(self, imgs, patch_aug=False, mask_ratio=1, num_targets=None):
+    def forward(self, imgs, patch_aug=False, mask_ratio=1, num_targets=None, CJ=None):
         # if isinstance(imgs, list):
         #     imgs_train = imgs[0]
         #     imgs = imgs[1]
@@ -351,27 +351,29 @@ class XLNetViT(nn.Module):
         imgs_seq = self.patchify(imgs)
 
         if patch_aug:
-            p = self.patch_embed.patch_size[0]
-            mean = torch.tensor([0.485, 0.456, 0.406]).to(imgs.device).view(1, 3, 1, 1)
-            std = torch.tensor([0.229, 0.224, 0.225]).to(imgs.device).view(1, 3, 1, 1)
-            imgs_ = imgs_seq.flatten(0, 1).view(-1, p, p, 3).permute(0, 3, 1, 2).mul_(std).add_(mean)
+            with torch.no_grad():
+                p = self.patch_embed.patch_size[0]
+                mean = torch.tensor([0.485, 0.456, 0.406]).to(imgs.device).view(1, 3, 1, 1)
+                std = torch.tensor([0.229, 0.224, 0.225]).to(imgs.device).view(1, 3, 1, 1)
+                imgs_ = imgs_seq.flatten(0, 1).view(-1, p, p, 3).permute(0, 3, 1, 2).mul_(std).add_(mean)
 
-            cj_num = 16
-            patch_aug_mask = torch.empty(imgs_.shape[0] * 2, 1, 1, 1, device=imgs_.device).random_(0, int(cj_num * 1.25))
-            imgs_train = imgs_ * (patch_aug_mask[:imgs_.shape[0]] >= cj_num).float()
-            CJ = torchvision.transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)
-            for i in range(cj_num):
-                imgs_train += CJ(imgs_) * (patch_aug_mask[:imgs_.shape[0]] == i).float()
+                cj_num = 8
+                patch_aug_mask = torch.empty(imgs_.shape[0] * 2, 1, 1, 1, device=imgs_.device).random_(0, int(cj_num * 1.25))
+                imgs_train = torch.zeros_like(imgs_)
+                imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask[:imgs_.shape[0]] >= cj_num).float())
+                for i in range(cj_num):
+                    imgs_train = imgs_train.addcmul_(CJ(imgs_), (patch_aug_mask[:imgs_.shape[0]] == i).float())
 
-            imgs_ = imgs_train
-            patch_aug_mask = patch_aug_mask[imgs_.shape[0]:] % 4
-            imgs_train = imgs_ * (patch_aug_mask == 0).float()
-            for i in range(1, 4):
-                imgs_train += torch.rot90(imgs_, i, [2, 3]) * (patch_aug_mask == i).float()
+                imgs_ = imgs_train
+                patch_aug_mask = patch_aug_mask[imgs_.shape[0]:] % 4
+                imgs_train = torch.zeros_like(imgs_)
+                imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask == 0).float())
+                for i in range(1, 4):
+                    imgs_train = imgs_train.addcmul_(torch.rot90(imgs_, i, [2, 3]), (patch_aug_mask == i).float())
 
-            h = w = imgs.shape[2] // p
-            imgs_train = imgs_train.sub_(mean).div_(std).view(imgs.shape[0], h, w, 3, p, p)
-            imgs_train = imgs_train.permute(0, 3, 1, 4, 2, 5).flatten(2, 3).flatten(3, 4)
+                h = w = imgs.shape[2] // p
+                imgs_train = imgs_train.sub_(mean).div_(std).view(imgs.shape[0], h, w, 3, p, p)
+                imgs_train = imgs_train.permute(0, 3, 1, 4, 2, 5).flatten(2, 3).flatten(3, 4)
         else:
             imgs_train = imgs
         pred, ids_shuffle = self.forward_encoder(imgs_train, num_seen, num_targets, attn_mask)
