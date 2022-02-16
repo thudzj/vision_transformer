@@ -332,6 +332,8 @@ class XLNetViT(nn.Module):
         if isinstance(imgs, list):
             imgs_train = imgs[0]
             imgs = imgs[1]
+        else:
+            imgs_train = imgs
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
