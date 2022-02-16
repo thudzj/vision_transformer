@@ -353,19 +353,19 @@ class XLNetViT(nn.Module):
         if patch_aug:
             mean = torch.tensor([0.485, 0.456, 0.406]).to(imgs.device).view(1, 3, 1, 1)
             std = torch.tensor([0.229, 0.224, 0.225]).to(imgs.device).view(1, 3, 1, 1)
-            imgs_ = imgs_seq.flatten(0, 1).view(-1, self.patch_embed.patch_size[0], self.patch_embed.patch_size[0], 3).permute(0, 3, 1, 2) * std + mean
+            imgs_ = imgs_seq.flatten(0, 1).view(-1, self.patch_embed.patch_size[0], self.patch_embed.patch_size[0], 3).permute(0, 3, 1, 2).mul_(std).add_(mean)
 
             cj_num = 16
-            patch_aug_mask = torch.empty(imgs_.shape[0], 1, 1, 1).random_(0, int(cj_num * 1.25)).to(imgs_.device)
-            imgs_train = torch.zeros_like(imgs_)
+            patch_aug_mask = torch.empty(imgs_.shape[0] * 2, 1, 1, 1, device=imgs_.device).random_(0, int(cj_num * 1.25))
+            imgs_train = imgs_ * (patch_aug_mask[:imgs_.shape[0]] >= cj_num).float()
+            CJ = torchvision.transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)
             for i in range(cj_num):
-                imgs_train += torchvision.transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)(imgs_) * (patch_aug_mask == i).float()
-            imgs_train += imgs_ * (patch_aug_mask >= cj_num).float()
+                imgs_train += CJ(imgs_) * (patch_aug_mask[:imgs_.shape[0]] == i).float()
 
             imgs_ = imgs_train
-            imgs_train = torch.zeros_like(imgs_)
-            patch_aug_mask = torch.empty(imgs_.shape[0], 1, 1, 1).random_(0, 4).to(imgs_.device)
-            for i in range(4):
+            patch_aug_mask = patch_aug_mask[imgs_.shape[0]:] % 4
+            imgs_train = imgs_ * (patch_aug_mask == 0).float()
+            for i in range(1, 4):
                 imgs_train += torch.rot90(imgs_, i, [2, 3]) * (patch_aug_mask == i).float()
 
             imgs_train = imgs_train.sub_(mean).div_(std).permute(0, 2, 3, 1).flatten(1, 3)
