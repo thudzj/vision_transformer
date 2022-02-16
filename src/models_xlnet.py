@@ -360,16 +360,16 @@ class XLNetViT(nn.Module):
                 cj_num = 8
                 patch_aug_mask = torch.empty(imgs_.shape[0] * 2, 1, 1, 1, device=imgs_.device).random_(0, int(cj_num * 1.25))
                 imgs_train = torch.zeros_like(imgs_)
-                imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask[:imgs_.shape[0]] >= cj_num).float())
+                imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask[:imgs_.shape[0]] >= cj_num).type_as(imgs_))
                 for i in range(cj_num):
-                    imgs_train = imgs_train.addcmul_(CJ(imgs_), (patch_aug_mask[:imgs_.shape[0]] == i).float())
+                    imgs_train = imgs_train.addcmul_(CJ(imgs_), (patch_aug_mask[:imgs_.shape[0]] == i).type_as(imgs_))
 
                 imgs_ = imgs_train
                 patch_aug_mask = patch_aug_mask[imgs_.shape[0]:] % 4
                 imgs_train = torch.zeros_like(imgs_)
-                imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask == 0).float())
+                imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask == 0).type_as(imgs_))
                 for i in range(1, 4):
-                    imgs_train = imgs_train.addcmul_(torch.rot90(imgs_, i, [2, 3]), (patch_aug_mask == i).float())
+                    imgs_train = imgs_train.addcmul_(torch.rot90(imgs_, i, [2, 3]), (patch_aug_mask == i).type_as(imgs_))
 
                 h = w = imgs.shape[2] // p
                 imgs_train = imgs_train.sub_(mean).div_(std).view(imgs.shape[0], h, w, 3, p, p)
