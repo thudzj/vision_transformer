@@ -362,7 +362,7 @@ class XLNetViT(nn.Module):
                 imgs_train = torch.zeros_like(imgs_)
                 imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask[:imgs_.shape[0]] >= cj_num).type_as(imgs_))
                 for i in range(cj_num):
-                    imgs_train = imgs_train.addcmul_(CJ(imgs_), (patch_aug_mask[:imgs_.shape[0]] == i).type_as(imgs_))
+                    imgs_train = imgs_train.addcmul_(CJ(imgs_).type_as(imgs_), (patch_aug_mask[:imgs_.shape[0]] == i).type_as(imgs_))
 
                 imgs_ = imgs_train
                 patch_aug_mask = patch_aug_mask[imgs_.shape[0]:] % 4
