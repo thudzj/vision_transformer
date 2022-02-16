@@ -146,7 +146,7 @@ def get_args_parser():
 
 class DataAugmentationForXLNet(object):
     def __init__(self, args):
-        self.da = args.da
+        # self.da = args.da
 
         mean = torch.tensor([0.485, 0.456, 0.406])
         std = torch.tensor([0.229, 0.224, 0.225])
@@ -174,21 +174,21 @@ class DataAugmentationForXLNet(object):
                 mean=IMAGENET_DEFAULT_MEAN,
                 std=IMAGENET_DEFAULT_STD,
             )
-        elif args.da == 'patch_aug':
-            self.transform = transforms.Compose([
-                transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor()
-            ])
-
-            self.patchwise_transform = transforms.Compose([
-                transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
-                transforms.Lambda(lambda x: torch.rot90(x, np.random.choice([-1, 0, 1, 2]), [1, 2]))
-            ])
-
-            self.transform2 = transforms.Compose([
-                transforms.Normalize(mean=mean, std=std)
-            ])
+        # elif args.da == 'patch_aug':
+        #     self.transform = transforms.Compose([
+        #         transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+        #         transforms.RandomHorizontalFlip(),
+        #         transforms.ToTensor()
+        #     ])
+        #
+        #     self.patchwise_transform = transforms.Compose([
+        #         transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
+        #         transforms.Lambda(lambda x: torch.rot90(x, np.random.choice([-1, 0, 1, 2]), [1, 2]))
+        #     ])
+        #
+        #     self.transform2 = transforms.Compose([
+        #         transforms.Normalize(mean=mean, std=std)
+        #     ])
         else:
             self.transform = transforms.Compose([
                 transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
@@ -198,19 +198,19 @@ class DataAugmentationForXLNet(object):
             ])
 
     def __call__(self, image):
-        if self.da == 'patch_aug':
-            image = self.transform(image)
-            image_train = []
-            for i in range(image.shape[1] // 16):
-                for j in range(image.shape[2] // 16):
-                    image_train.append(self.patchwise_transform(image[:, i*16:(i+1)*16, j*16:(j+1)*16]))
-            image_train = torch.stack(image_train, 1)
-            image_train = image_train.view(3, image.shape[1] // 16, image.shape[2] // 16, 16, 16)
-            image_train = image_train.permute(0, 1, 3, 2, 4).flatten(1, 2).flatten(2, 3)
-            image_train = self.transform2(image_train)
-            image_target = self.transform2(image)
-            return image_train, image_target
-        else:
+        # if self.da == 'patch_aug':
+        #     image = self.transform(image)
+        #     image_train = []
+        #     for i in range(image.shape[1] // 16):
+        #         for j in range(image.shape[2] // 16):
+        #             image_train.append(self.patchwise_transform(image[:, i*16:(i+1)*16, j*16:(j+1)*16]))
+        #     image_train = torch.stack(image_train, 1)
+        #     image_train = image_train.view(3, image.shape[1] // 16, image.shape[2] // 16, 16, 16)
+        #     image_train = image_train.permute(0, 1, 3, 2, 4).flatten(1, 2).flatten(2, 3)
+        #     image_train = self.transform2(image_train)
+        #     image_target = self.transform2(image)
+        #     return image_train, image_target
+        # else:
             return self.transform(image)
 
     def __repr__(self):

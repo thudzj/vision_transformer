@@ -13,6 +13,7 @@ from functools import partial
 
 import torch
 import torch.nn as nn
+import torchvision
 
 from timm.models.vision_transformer import PatchEmbed, Mlp
 from timm.models.layers import DropPath, trunc_normal_
@@ -328,12 +329,12 @@ class XLNetViT(nn.Module):
         # y_logits = self.head_2(self.norm_2(y_feature))
         return g, ids_shuffle #, y_logits
 
-    def forward(self, imgs, mask_ratio=1, num_targets=None):
-        if isinstance(imgs, list):
-            imgs_train = imgs[0]
-            imgs = imgs[1]
-        else:
-            imgs_train = imgs
+    def forward(self, imgs, patch_aug=False, mask_ratio=1, num_targets=None):
+        # if isinstance(imgs, list):
+        #     imgs_train = imgs[0]
+        #     imgs = imgs[1]
+        # else:
+        #     imgs_train = imgs
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
@@ -347,10 +348,35 @@ class XLNetViT(nn.Module):
         attn_mask[1:, 0] = 0
         attn_mask = attn_mask.bool().to(imgs.device)
 
+        imgs_seq = self.patchify(imgs)
+
+        if patch_aug:
+            mean = torch.tensor([0.485, 0.456, 0.406]).to(imgs.device).view(1, 3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225]).to(imgs.device).view(1, 3, 1, 1)
+            imgs_ = imgs_seq.flatten(0, 1).view(-1, self.patch_embed.patch_size[0], self.patch_embed.patch_size[0], 3).permute(0, 3, 1, 2) * std + mean
+
+            cj_num = 16
+            patch_aug_mask = torch.empty(imgs_.shape[0], 1, 1, 1).random_(0, int(cj_num * 1.25)).to(imgs_.device)
+            imgs_train = torch.zeros_like(imgs_)
+            for i in range(cj_num):
+                imgs_train += torchvision.transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)(imgs_) * (patch_aug_mask == i).float()
+            imgs_train += imgs_ * (patch_aug_mask >= cj_num).float()
+
+            imgs_ = imgs_train
+            imgs_train = torch.zeros_like(imgs_)
+            patch_aug_mask = torch.empty(imgs_.shape[0], 1, 1, 1).random_(0, 4).to(imgs_.device)
+            for i in range(4):
+                imgs_train += torch.rot90(imgs_, i, [2, 3]) * (patch_aug_mask == i).float()
+
+            imgs_train = imgs_train.sub_(mean).div_(std).permute(0, 2, 3, 1).flatten(1, 3)
+            imgs_train = imgs_train.view(imgs.shape[0], -1, imgs_train.shape[1])
+            imgs_train = self.unpatchify(imgs_train)
+        else:
+            imgs_train = imgs
         pred, ids_shuffle = self.forward_encoder(imgs_train, num_seen, num_targets, attn_mask)
         target_indices = ids_shuffle[:, num_seen:num_seen + num_targets]
 
-        target = torch.gather(self.patchify(imgs), dim=1, index=target_indices)
+        target = torch.gather(imgs_seq, dim=1, index=target_indices)
         if self.norm_pix_loss:
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)

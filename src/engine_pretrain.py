@@ -51,13 +51,13 @@ def train_one_epoch(model: torch.nn.Module,
             #     print(data_iter_step, mask_ratio, int(model.module.patch_embed.num_patches * (1 - mask_ratio)), force=True)
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
-        if isinstance(samples, list):
-            samples = [samples[0].to(device, non_blocking=True), samples[1].to(device, non_blocking=True)]
-        else:
-            samples = samples.to(device, non_blocking=True)
+        # if isinstance(samples, list):
+        #     samples = [samples[0].to(device, non_blocking=True), samples[1].to(device, non_blocking=True)]
+        # else:
+        samples = samples.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            loss, _, _ = model(samples, mask_ratio=mask_ratio, num_targets=args.num_targets)
+            loss, _, _ = model(samples, patch_aug=(args.da == 'patch_aug'), mask_ratio=mask_ratio, num_targets=args.num_targets)
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):
