@@ -144,39 +144,80 @@ def get_args_parser():
 
     return parser
 
+class DataAugmentationForXLNet(object):
+    def __init__(self, args):
+        self.da = args.da
 
-def data_aug(da):
-    if da == 'manual':
-        tf_ = transforms.Compose([
-            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.RandomApply([GaussianBlur([0.1, 2.0])], p=0.5),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-    elif 'aa' in da:
-        aa = da.replace("aa-", "")
-        tf_ = transform = create_transform(
-            input_size=args.input_size,
-            scale=(0.2, 1.0),
-            is_training=True,
-            color_jitter=0,
-            auto_augment=aa,
-            interpolation='bicubic',
-            re_prob=0,
-            mean=IMAGENET_DEFAULT_MEAN,
-            std=IMAGENET_DEFAULT_STD,
-        )
-    else:
-        tf_ = transforms.Compose([
-            transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-    return tf_
+        mean = torch.tensor([0.485, 0.456, 0.406])
+        std = torch.tensor([0.229, 0.224, 0.225])
+
+        if args.da == 'manual':
+            self.transform = transforms.Compose([
+                transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
+                transforms.RandomGrayscale(p=0.2),
+                transforms.RandomApply([GaussianBlur([0.1, 2.0])], p=0.5),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean, std=std)
+            ])
+        elif 'aa' in args.da:
+            aa = args.da.replace("aa-", "")
+            self.transform = create_transform(
+                input_size=args.input_size,
+                scale=(0.2, 1.0),
+                is_training=True,
+                color_jitter=0,
+                auto_augment=aa,
+                interpolation='bicubic',
+                re_prob=0,
+                mean=IMAGENET_DEFAULT_MEAN,
+                std=IMAGENET_DEFAULT_STD,
+            )
+        elif args.da == 'patch_aug':
+            self.transform = transforms.Compose([
+                transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor()
+            ])
+
+            self.patchwise_transform = transforms.Compose([
+                transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
+                transforms.Lambda(lambda x: torch.rot90(x, np.random.choice([-1, 0, 1, 2]), [1, 2]))
+            ])
+
+            self.transform2 = transforms.Compose([
+                transforms.Normalize(mean=mean, std=std)
+            ])
+        else:
+            self.transform = transforms.Compose([
+                transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean, std=std)
+            ])
+
+    def __call__(self, image):
+        if self.da == 'patch_aug':
+            image = self.transform(image)
+            image_train = []
+            for i in range(image.shape[1] // 16):
+                for j in range(image.shape[2] // 16):
+                    image_train.append(self.patchwise_transform(image[:, i*16:(i+1)*16, j*16:(j+1)*16]))
+            image_train = torch.stack(image_train, 1)
+            image_train = image_train.view(3, image.shape[1] // 16, image.shape[2] // 16, 16, 16)
+            image_train = image_train.permute(0, 1, 3, 2, 4).flatten(1, 2).flatten(2, 3)
+            image_train = self.transform2(image_train)
+            image_target = self.transform2(image)
+            return image_train, image_target
+        else:
+            return self.transform(image)
+
+    def __repr__(self):
+        repr = "(DataAugmentationForXLNet,\n"
+        repr += "  transform = %s,\n" % str(self.transform)
+        repr += ")"
+        return repr
 
 def main(args):
     misc.init_distributed_mode(args)
@@ -203,7 +244,7 @@ def main(args):
 
     cudnn.benchmark = True
 
-    transform_train = data_aug(args.da)
+    transform_train = DataAugmentationForXLNet(args)
 
     dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     print(dataset_train)

@@ -329,6 +329,9 @@ class XLNetViT(nn.Module):
         return g, ids_shuffle #, y_logits
 
     def forward(self, imgs, mask_ratio=1, num_targets=None):
+        if isinstance(imgs, list):
+            imgs_train = imgs[0]
+            imgs = imgs[1]
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
@@ -342,7 +345,7 @@ class XLNetViT(nn.Module):
         attn_mask[1:, 0] = 0
         attn_mask = attn_mask.bool().to(imgs.device)
 
-        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
+        pred, ids_shuffle = self.forward_encoder(imgs_train, num_seen, num_targets, attn_mask)
         target_indices = ids_shuffle[:, num_seen:num_seen + num_targets]
 
         target = torch.gather(self.patchify(imgs), dim=1, index=target_indices)
