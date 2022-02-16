@@ -351,9 +351,10 @@ class XLNetViT(nn.Module):
         imgs_seq = self.patchify(imgs)
 
         if patch_aug:
+            p = self.patch_embed.patch_size[0]
             mean = torch.tensor([0.485, 0.456, 0.406]).to(imgs.device).view(1, 3, 1, 1)
             std = torch.tensor([0.229, 0.224, 0.225]).to(imgs.device).view(1, 3, 1, 1)
-            imgs_ = imgs_seq.flatten(0, 1).view(-1, self.patch_embed.patch_size[0], self.patch_embed.patch_size[0], 3).permute(0, 3, 1, 2).mul_(std).add_(mean)
+            imgs_ = imgs_seq.flatten(0, 1).view(-1, p, p, 3).permute(0, 3, 1, 2).mul_(std).add_(mean)
 
             cj_num = 16
             patch_aug_mask = torch.empty(imgs_.shape[0] * 2, 1, 1, 1, device=imgs_.device).random_(0, int(cj_num * 1.25))
@@ -368,9 +369,9 @@ class XLNetViT(nn.Module):
             for i in range(1, 4):
                 imgs_train += torch.rot90(imgs_, i, [2, 3]) * (patch_aug_mask == i).float()
 
-            imgs_train = imgs_train.sub_(mean).div_(std).permute(0, 2, 3, 1).flatten(1, 3)
-            imgs_train = imgs_train.view(imgs.shape[0], -1, imgs_train.shape[1])
-            imgs_train = self.unpatchify(imgs_train)
+            h = w = imgs.shape[2] // p
+            imgs_train = imgs_train.sub_(mean).div_(std).view(imgs.shape[0], h, w, 3, p, p)
+            imgs_train = imgs_train.permute(0, 3, 1, 4, 2, 5).flatten(2, 3).flatten(3, 4)
         else:
             imgs_train = imgs
         pred, ids_shuffle = self.forward_encoder(imgs_train, num_seen, num_targets, attn_mask)
