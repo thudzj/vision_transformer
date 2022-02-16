@@ -357,7 +357,7 @@ class XLNetViT(nn.Module):
                 std = torch.tensor([0.229, 0.224, 0.225]).to(imgs.device).view(1, 3, 1, 1)
                 imgs_ = imgs_seq.flatten(0, 1).view(-1, p, p, 3).permute(0, 3, 1, 2).mul_(std).add_(mean)
 
-                cj_num = 8
+                cj_num = 16
                 patch_aug_mask = torch.empty(imgs_.shape[0] * 2, 1, 1, 1, device=imgs_.device).random_(0, int(cj_num * 1.25))
                 imgs_train = torch.zeros_like(imgs_)
                 imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask[:imgs_.shape[0]] >= cj_num).type_as(imgs_))
