@@ -239,6 +239,17 @@ src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-struc
 
 src/main_pretrain.py --batch_size 64 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx-da_m9 --structured_ctx --da aa-rand-m9-mstd0.5-inc1
 src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-structuredctx-da_m9/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 83.095 Acc@5 96.317 loss 0.759 
+
+
+
+
+src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx-da_pa --structured_ctx --da patch_aug (CJ 16)
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-structuredctx-da_pa/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+
+
+src/main_pretrain.py --batch_size 64 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 400 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx-da_pa4 --structured_ctx --da patch_aug
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-structuredctx-da_pa4/checkpoint-399.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 
 ----------------
 
