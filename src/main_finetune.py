@@ -165,6 +165,8 @@ def main(args):
             args.data_path = '/home/ubuntu/ILSVRC/Data/CLS-LOC/'
         elif os.path.isdir('/home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/'):
             args.data_path = '/home/ubuntu/zhijie/ILSVRC/Data/CLS-LOC/'
+        elif os.path.isdir('/workspace/home/zhijie/ILSVRC/Data/CLS-LOC/'):
+            args.data_path = '/workspace/home/zhijie/ILSVRC/Data/CLS-LOC/'
         elif os.path.isdir('/data/LargeData/Large/ImageNet/'):
             args.data_path = '/data/LargeData/Large/ImageNet/'
         else:
