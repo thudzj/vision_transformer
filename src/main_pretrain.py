@@ -98,6 +98,8 @@ def get_args_parser():
     parser.add_argument('--structured_ctx', default=False, action='store_true')
     parser.add_argument('--beit_ctx', default=False, action='store_true')
 
+    parser.add_argument('--scale', default=[0.2, 1.], type=float, nargs='+')
+
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
@@ -153,7 +155,7 @@ class DataAugmentationForXLNet(object):
 
         if args.da == 'manual':
             self.transform = transforms.Compose([
-                transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+                transforms.RandomResizedCrop(args.input_size, scale=(args.scale[0], args.scale[1]), interpolation=3),  # 3 is bicubic
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
                 transforms.RandomGrayscale(p=0.2),
@@ -165,7 +167,7 @@ class DataAugmentationForXLNet(object):
             aa = args.da.replace("aa-", "")
             self.transform = create_transform(
                 input_size=args.input_size,
-                scale=(0.2, 1.0),
+                scale=(args.scale[0], args.scale[1]),
                 is_training=True,
                 color_jitter=0,
                 auto_augment=aa,
@@ -191,7 +193,7 @@ class DataAugmentationForXLNet(object):
         #     ])
         else:
             self.transform = transforms.Compose([
-                transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
+                transforms.RandomResizedCrop(args.input_size, scale=(args.scale[0], args.scale[1]), interpolation=3),  # 3 is bicubic
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=mean, std=std)

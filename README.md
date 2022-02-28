@@ -233,6 +233,14 @@ src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_
 src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.87-structuredctx-800/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 
 
+src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 800 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx-800-da_v0r --structured_ctx --da aa-v0r
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-structuredctx-800-da_v0r/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+
+
+src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 800 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx-800-scale.5 --structured_ctx --scale 0.5 1.0
+src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-structuredctx-800-scale.5/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+
+
 src/main_pretrain.py --batch_size 64 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 800 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-800
 src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-800/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
     * Acc@1 82.999 Acc@5 96.347 loss 0.767
@@ -313,6 +321,7 @@ src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-beitc
 
 src/main_pretrain.py --batch_size 128 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 800 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.87 --num_targets 49 --tag m0.87-beit_ctx-800 --beit_ctx
 src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.87-beit_ctx-800/checkpoint-799.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.75 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+    * Acc@1 83.037 Acc@5 96.367 loss 0.760
 
 
 src/main_pretrain.py --batch_size 64 --accum_iter 2 --model xlnet_vit_base_patch16 --norm_pix_loss --epochs 800 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-beit_ctx-800 --beit_ctx
