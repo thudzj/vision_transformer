@@ -97,6 +97,7 @@ def get_args_parser():
     parser.add_argument('--avg_mask_token', default=False, action='store_true')
     parser.add_argument('--structured_ctx', default=False, action='store_true')
     parser.add_argument('--beit_ctx', default=False, action='store_true')
+    parser.add_argument('--all_beit_ctx', default=False, action='store_true')
 
     parser.add_argument('--scale', default=[0.2, 1.], type=float, nargs='+')
 
@@ -299,7 +300,8 @@ def main(args):
             one_extra_layer=args.one_extra_layer,
             avg_mask_token=args.avg_mask_token,
             structured_ctx=args.structured_ctx,
-            beit_ctx=args.beit_ctx)
+            beit_ctx=args.beit_ctx,
+            all_beit_ctx=args.all_beit_ctx)
         print("Num_seen", int(model.patch_embed.num_patches * (1 - args.mask_ratio)))
 
     model.to(device)

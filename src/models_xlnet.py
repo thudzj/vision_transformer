@@ -148,7 +148,7 @@ class XLNetViT(nn.Module):
                  mlp_ratio=4., norm_layer=nn.LayerNorm,
                  norm_pix_loss=False,
                  g_depth=0, span=[1], one_extra_layer=False, avg_mask_token=False,
-                 structured_ctx=False, beit_ctx=False):
+                 structured_ctx=False, beit_ctx=False, all_beit_ctx=False):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -187,6 +187,7 @@ class XLNetViT(nn.Module):
         self.avg_mask_token = avg_mask_token
         self.structured_ctx = structured_ctx
         self.beit_ctx = beit_ctx
+        self.all_beit_ctx = all_beit_ctx
 
         self.initialize_weights()
 
@@ -259,7 +260,10 @@ class XLNetViT(nn.Module):
         # permutation auto-regressive modeling
         N, L, D = x.shape  # batch, length, dim
 
-        if self.beit_ctx:
+        if self.all_beit_ctx:
+            tmp = int(math.sqrt(self.patch_embed.num_patches))
+            ids_shuffle = torch.stack([beit_mask(tmp, tmp, num_seen + num_targets) for _ in range(N)]).to(x.device)
+        elif self.beit_ctx:
             tmp = int(math.sqrt(self.patch_embed.num_patches))
             ids_shuffle = torch.stack([beit_mask(tmp, tmp, num_seen) for _ in range(N)]).to(x.device)
         elif self.structured_ctx:
