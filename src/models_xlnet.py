@@ -74,7 +74,7 @@ def beit_mask(height, width, num_masks, min_num_patches=16, max_num_patches=None
 
 
 class Attention(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
+    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., has_proj=True):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
@@ -83,8 +83,10 @@ class Attention(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
+        self.has_proj = has_proj
+        if has_proj:
+            self.proj = nn.Linear(dim, dim)
+            self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, x, x2=None, select_kv=None, attn_mask=None):
         B, N, C = x.shape
@@ -113,8 +115,9 @@ class Attention(nn.Module):
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
+        if self.has_proj:
+            x = self.proj(x)
+            x = self.proj_drop(x)
         return x
 
 
@@ -165,7 +168,9 @@ class XLNetViT(nn.Module):
             for i in range(depth)])
 
         if one_extra_layer:
-            self.extra_block = Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
+            self.extra_norm = norm_layer(embed_dim)
+            self.extra_attn = Attention(
+                embed_dim, num_heads=num_heads, qkv_bias=True, qk_scale=None, has_proj=True)
 
         if g_depth > 0:
             self.g_blocks = nn.ModuleList([
@@ -314,7 +319,7 @@ class XLNetViT(nn.Module):
             # y_feature = x_g[:, 0, :]
 
             if self.one_extra_layer:
-                g = self.extra_block(g, x_g[:, :x.shape[1]], attn_mask=attn_mask[num_seen + num_targets:])
+                g = g + self.extra_attn(self.extra_norm(g), self.extra_norm(x_g[:, :x.shape[1]]), attn_mask=attn_mask[num_seen + num_targets:])
         else:
             attn_mask1 = attn_mask[:num_seen + num_targets]
             attn_mask2 = attn_mask[num_seen + num_targets:]
