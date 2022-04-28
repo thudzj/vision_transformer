@@ -321,6 +321,7 @@ class XLNetViT(nn.Module):
             if self.one_extra_layer:
                 g = g + self.extra_attn(self.extra_norm(g), self.extra_norm(x_g[:, :x.shape[1]]), attn_mask=attn_mask[num_seen + num_targets:])
         else:
+            '''
             attn_mask1 = attn_mask[:num_seen + num_targets]
             attn_mask2 = attn_mask[num_seen + num_targets:]
 
@@ -333,6 +334,17 @@ class XLNetViT(nn.Module):
 
             g = self.g_blocks[-1](g, x, attn_mask=attn_mask2)
             # y_feature = x[:, 0, :]
+            '''
+            for lyr in range(self.g_depth):
+                x = self.blocks[lyr](x, attn_mask=attn_mask[:num_seen + num_targets])
+
+            x_g = torch.cat([x, g], 1)
+            for lyr in range(self.g_depth, len(self.blocks)):
+                x_g = self.blocks[lyr](x_g, select_kv=x.shape[1], attn_mask=attn_mask)
+            g = x_g[:, x.shape[1]:]
+
+            if self.one_extra_layer:
+                g = g + self.extra_attn(self.extra_norm(g), self.extra_norm(x_g[:, :x.shape[1]]), attn_mask=attn_mask[num_seen + num_targets:])
 
         g = self.head(self.norm(g))
         # y_logits = self.head_2(self.norm_2(y_feature))
@@ -386,7 +398,7 @@ class XLNetViT(nn.Module):
         else:
             imgs_train = imgs
         pred, ids_shuffle = self.forward_encoder(imgs_train, num_seen, num_targets, attn_mask)
-        target_indices = ids_shuffle[:, num_seen:num_seen + num_targets]
+        target_indices = ids_shuffle[:, num_seen:num_seen + num_targets, :imgs_seq.shape[-1]]
 
         target = torch.gather(imgs_seq, dim=1, index=target_indices)
         if self.norm_pix_loss:
