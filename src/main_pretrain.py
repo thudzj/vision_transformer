@@ -41,20 +41,6 @@ from engine_pretrain import train_one_epoch, plot_evaluation_results
 import tensorflow as tf
 tf.config.experimental.set_visible_devices([], 'GPU')
 
-import random
-from PIL import Image, ImageFilter
-
-class GaussianBlur(object):
-    """Gaussian blur augmentation: https://github.com/facebookresearch/moco/"""
-
-    def __init__(self, sigma=[.1, 2.]):
-        self.sigma = sigma
-
-    def __call__(self, x):
-        sigma = random.uniform(self.sigma[0], self.sigma[1])
-        x = x.filter(ImageFilter.GaussianBlur(radius=sigma))
-        return x
-
 def get_args_parser():
     parser = argparse.ArgumentParser('Pre-training', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int,
@@ -73,34 +59,21 @@ def get_args_parser():
 
     parser.add_argument('--mask_ratio', default=0.75, type=float,
                         help='Masking ratio (percentage of removed patches).')
-    parser.add_argument('--mask_ratio_range', default=None, type=float, nargs='+')
 
     parser.add_argument('--norm_pix_loss', action='store_true',
                         help='Use (per-patch) normalized pixels as targets for computing loss')
     parser.set_defaults(norm_pix_loss=False)
 
-    parser.add_argument('--span', default=[1], type=int, nargs='+')
     parser.add_argument('--betas', default=[0.9, 0.95], type=float, nargs='+')
-
     parser.add_argument('--clip_grad', default=None, type=float)
-
-    parser.add_argument('--da', default='', type=str)
 
     parser.add_argument('--num_targets', default=None, type=int,
                         help='number of the visual tokens/patches to predict')
-    parser.add_argument('--pred_pos_prob', default=0., type=float)
-    parser.add_argument('--pred_pos_smoothing', default=0.1, type=float,
-                        help='label smoothing for predicting position')
-    parser.add_argument('--g_depth', default=0, type=int)
-    # parser.add_argument('--alpha', default=0., type=float)
     parser.add_argument('--one_extra_layer', default=False, action='store_true')
-    parser.add_argument('--avg_mask_token', default=False, action='store_true')
     parser.add_argument('--structured_ctx', default=False, action='store_true')
     parser.add_argument('--beit_ctx', default=False, action='store_true')
-    parser.add_argument('--all_beit_ctx', default=False, action='store_true')
 
     parser.add_argument('--scale', default=[0.2, 1.], type=float, nargs='+')
-
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
@@ -147,81 +120,6 @@ def get_args_parser():
 
     return parser
 
-class DataAugmentationForXLNet(object):
-    def __init__(self, args):
-        # self.da = args.da
-
-        mean = torch.tensor([0.485, 0.456, 0.406])
-        std = torch.tensor([0.229, 0.224, 0.225])
-
-        if args.da == 'manual':
-            self.transform = transforms.Compose([
-                transforms.RandomResizedCrop(args.input_size, scale=(args.scale[0], args.scale[1]), interpolation=3),  # 3 is bicubic
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
-                transforms.RandomGrayscale(p=0.2),
-                transforms.RandomApply([GaussianBlur([0.1, 2.0])], p=0.5),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=mean, std=std)
-            ])
-        elif 'aa' in args.da:
-            aa = args.da.replace("aa-", "")
-            self.transform = create_transform(
-                input_size=args.input_size,
-                scale=(args.scale[0], args.scale[1]),
-                is_training=True,
-                color_jitter=0,
-                auto_augment=aa,
-                interpolation='bicubic',
-                re_prob=0,
-                mean=IMAGENET_DEFAULT_MEAN,
-                std=IMAGENET_DEFAULT_STD,
-            )
-        # elif args.da == 'patch_aug':
-        #     self.transform = transforms.Compose([
-        #         transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-        #         transforms.RandomHorizontalFlip(),
-        #         transforms.ToTensor()
-        #     ])
-        #
-        #     self.patchwise_transform = transforms.Compose([
-        #         transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
-        #         transforms.Lambda(lambda x: torch.rot90(x, np.random.choice([-1, 0, 1, 2]), [1, 2]))
-        #     ])
-        #
-        #     self.transform2 = transforms.Compose([
-        #         transforms.Normalize(mean=mean, std=std)
-        #     ])
-        else:
-            self.transform = transforms.Compose([
-                transforms.RandomResizedCrop(args.input_size, scale=(args.scale[0], args.scale[1]), interpolation=3),  # 3 is bicubic
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=mean, std=std)
-            ])
-
-    def __call__(self, image):
-        # if self.da == 'patch_aug':
-        #     image = self.transform(image)
-        #     image_train = []
-        #     for i in range(image.shape[1] // 16):
-        #         for j in range(image.shape[2] // 16):
-        #             image_train.append(self.patchwise_transform(image[:, i*16:(i+1)*16, j*16:(j+1)*16]))
-        #     image_train = torch.stack(image_train, 1)
-        #     image_train = image_train.view(3, image.shape[1] // 16, image.shape[2] // 16, 16, 16)
-        #     image_train = image_train.permute(0, 1, 3, 2, 4).flatten(1, 2).flatten(2, 3)
-        #     image_train = self.transform2(image_train)
-        #     image_target = self.transform2(image)
-        #     return image_train, image_target
-        # else:
-            return self.transform(image)
-
-    def __repr__(self):
-        repr = "(DataAugmentationForXLNet,\n"
-        repr += "  transform = %s,\n" % str(self.transform)
-        repr += ")"
-        return repr
-
 def main(args):
     misc.init_distributed_mode(args)
 
@@ -249,8 +147,12 @@ def main(args):
 
     cudnn.benchmark = True
 
-    transform_train = DataAugmentationForXLNet(args)
-
+    transform_train = transforms.Compose([
+        transforms.RandomResizedCrop(args.input_size, scale=(args.scale[0], args.scale[1]), interpolation=3),  # 3 is bicubic
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=torch.tensor([0.485, 0.456, 0.406]), std=torch.tensor([0.229, 0.224, 0.225]))
+    ])
     dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     print(dataset_train)
 
@@ -293,15 +195,9 @@ def main(args):
     elif 'xlnet' in args.model:
         model = models_xlnet.__dict__[args.model](
             norm_pix_loss=args.norm_pix_loss,
-            # pred_pos=args.pred_pos,
-            # pred_pos_smoothing=args.pred_pos_smoothing,
-            g_depth=args.g_depth,
-            span=args.span,
             one_extra_layer=args.one_extra_layer,
-            avg_mask_token=args.avg_mask_token,
             structured_ctx=args.structured_ctx,
-            beit_ctx=args.beit_ctx,
-            all_beit_ctx=args.all_beit_ctx)
+            beit_ctx=args.beit_ctx)
         print("Num_seen", int(model.patch_embed.num_patches * (1 - args.mask_ratio)))
 
     model.to(device)

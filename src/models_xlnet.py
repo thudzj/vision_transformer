@@ -74,7 +74,7 @@ def beit_mask(height, width, num_masks, min_num_patches=16, max_num_patches=None
 
 
 class Attention(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., has_proj=True):
+    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
@@ -83,10 +83,9 @@ class Attention(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.has_proj = has_proj
-        if has_proj:
-            self.proj = nn.Linear(dim, dim)
-            self.proj_drop = nn.Dropout(proj_drop)
+
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, x, x2=None, select_kv=None, attn_mask=None):
         B, N, C = x.shape
@@ -115,9 +114,8 @@ class Attention(nn.Module):
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        if self.has_proj:
-            x = self.proj(x)
-            x = self.proj_drop(x)
+        x = self.proj(x)
+        x = self.proj_drop(x)
         return x
 
 
@@ -141,8 +139,6 @@ class Block(nn.Module):
         return x
 
 
-
-
 class XLNetViT(nn.Module):
     """ XLNet with VisionTransformer backbone
     """
@@ -150,8 +146,8 @@ class XLNetViT(nn.Module):
                  embed_dim=1024, depth=24, num_heads=16,
                  mlp_ratio=4., norm_layer=nn.LayerNorm,
                  norm_pix_loss=False,
-                 g_depth=0, span=[1], one_extra_layer=False, avg_mask_token=False,
-                 structured_ctx=False, beit_ctx=False, all_beit_ctx=False):
+                 one_extra_layer=False,
+                 structured_ctx=False, beit_ctx=False):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -170,29 +166,15 @@ class XLNetViT(nn.Module):
         if one_extra_layer:
             self.extra_norm = norm_layer(embed_dim)
             self.extra_attn = Attention(
-                embed_dim, num_heads=num_heads, qkv_bias=True, qk_scale=None, has_proj=True)
-
-        if g_depth > 0:
-            self.g_blocks = nn.ModuleList([
-                Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
-                for i in range(g_depth)])
+                embed_dim, num_heads=num_heads, qkv_bias=True, qk_scale=None)
 
         self.norm = norm_layer(embed_dim)
         self.head = nn.Linear(embed_dim, patch_size**2 * in_chans, bias=True)
 
-        # self.norm_2 = norm_layer(embed_dim)
-        # self.head_2 = nn.Linear(embed_dim, 1000, bias=True)
-
-        # --------------------------------------------------------------------------
-
-        self.span = span
         self.norm_pix_loss = norm_pix_loss
-        self.g_depth = g_depth
         self.one_extra_layer = one_extra_layer
-        self.avg_mask_token = avg_mask_token
         self.structured_ctx = structured_ctx
         self.beit_ctx = beit_ctx
-        self.all_beit_ctx = all_beit_ctx
 
         self.initialize_weights()
 
@@ -257,18 +239,12 @@ class XLNetViT(nn.Module):
 
         # add pos embed w/o cls token
         x = x_ + self.pos_embed[:, 1:, :]
-        if self.avg_mask_token:
-            g = self.pos_embed[:, 1:, :] + x_.mean(1)[:, None, :]
-        else:
-            g = (self.pos_embed[:, 1:, :] + self.mask_token).expand_as(x_)
+        g = (self.pos_embed[:, 1:, :] + self.mask_token).expand_as(x_)
 
         # permutation auto-regressive modeling
         N, L, D = x.shape  # batch, length, dim
 
-        if self.all_beit_ctx:
-            tmp = int(math.sqrt(self.patch_embed.num_patches))
-            ids_shuffle = torch.stack([beit_mask(tmp, tmp, num_seen + num_targets) for _ in range(N)]).to(x.device)
-        elif self.beit_ctx:
+        if self.beit_ctx:
             tmp = int(math.sqrt(self.patch_embed.num_patches))
             ids_shuffle = torch.stack([beit_mask(tmp, tmp, num_seen) for _ in range(N)]).to(x.device)
         elif self.structured_ctx:
@@ -291,14 +267,7 @@ class XLNetViT(nn.Module):
             idx_others = torch.stack(idx_others)
             ids_shuffle = torch.cat([ids_ctx, idx_others], 1).to(x.device)
         else:
-            span = self.span[torch.randint(0, len(self.span), (1,)).item()]
-            noise = torch.rand(N, L // span, device=x.device)  # noise in [0, 1]
-            ids_shuffle = ((torch.argsort(noise, dim=1) * span).unsqueeze(-1) + torch.arange(0, span, device=x.device)).flatten(1).long()
-            # print(span, ids_shuffle[:4, :15].data.cpu().numpy())
-
-        # noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
-        # ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
-        # print(ids_shuffle.shape)
+            assert False
 
         ids_shuffle = ids_shuffle.unsqueeze(-1).repeat(1, 1, D)
         x = torch.gather(x, dim=1, index=ids_shuffle[:, :num_seen + num_targets - 1])
@@ -310,52 +279,19 @@ class XLNetViT(nn.Module):
         x = torch.cat((cls_tokens, x), dim=1)
 
         # apply Transformer blocks
-        if self.g_depth == 0:
-            x_g = torch.cat([x, g], 1)
-            for blk in self.blocks:
-                x_g = blk(x_g, select_kv=x.shape[1], attn_mask=attn_mask)
+        x_g = torch.cat([x, g], 1)
+        for blk in self.blocks:
+            x_g = blk(x_g, select_kv=x.shape[1], attn_mask=attn_mask)
 
-            g = x_g[:, x.shape[1]:]
-            # y_feature = x_g[:, 0, :]
+        g = x_g[:, x.shape[1]:]
 
-            if self.one_extra_layer:
-                g = g + self.extra_attn(self.extra_norm(g), self.extra_norm(x_g[:, :x.shape[1]]), attn_mask=attn_mask[num_seen + num_targets:])
-        else:
-            '''
-            attn_mask1 = attn_mask[:num_seen + num_targets]
-            attn_mask2 = attn_mask[num_seen + num_targets:]
-
-            for lyr in range(len(self.blocks) + 1 - self.g_depth):
-                x = self.blocks[lyr](x, attn_mask=attn_mask1)
-
-            for lyr in range(len(self.blocks) + 1 - self.g_depth, len(self.blocks)):
-                g = self.g_blocks[lyr + self.g_depth - len(self.blocks) - 1](g, x, attn_mask=attn_mask2)
-                x = self.blocks[lyr](x, attn_mask=attn_mask1)
-
-            g = self.g_blocks[-1](g, x, attn_mask=attn_mask2)
-            # y_feature = x[:, 0, :]
-            '''
-            for lyr in range(self.g_depth):
-                x = self.blocks[lyr](x, attn_mask=attn_mask[:num_seen + num_targets])
-
-            x_g = torch.cat([x, g], 1)
-            for lyr in range(self.g_depth, len(self.blocks)):
-                x_g = self.blocks[lyr](x_g, select_kv=x.shape[1], attn_mask=attn_mask)
-            g = x_g[:, x.shape[1]:]
-
-            if self.one_extra_layer:
-                g = g + self.extra_attn(self.extra_norm(g), self.extra_norm(x_g[:, :x.shape[1]]), attn_mask=attn_mask[num_seen + num_targets:])
+        if self.one_extra_layer:
+            g = g + self.extra_attn(self.extra_norm(g), self.extra_norm(x_g[:, :x.shape[1]]), attn_mask=attn_mask[num_seen + num_targets:])
 
         g = self.head(self.norm(g))
-        # y_logits = self.head_2(self.norm_2(y_feature))
-        return g, ids_shuffle #, y_logits
+        return g, ids_shuffle
 
-    def forward(self, imgs, patch_aug=False, mask_ratio=1, num_targets=None, CJ=None):
-        # if isinstance(imgs, list):
-        #     imgs_train = imgs[0]
-        #     imgs = imgs[1]
-        # else:
-        #     imgs_train = imgs
+    def forward(self, imgs, mask_ratio=1, num_targets=None):
         num_seen = int(self.patch_embed.num_patches * (1 - mask_ratio))
         if num_targets is None:
             num_targets = self.patch_embed.num_patches - num_seen
@@ -370,34 +306,7 @@ class XLNetViT(nn.Module):
         attn_mask = attn_mask.bool().to(imgs.device)
 
         imgs_seq = self.patchify(imgs)
-
-        if patch_aug:
-            with torch.no_grad():
-                p = self.patch_embed.patch_size[0]
-                mean = torch.tensor([0.485, 0.456, 0.406]).to(imgs.device).view(1, 3, 1, 1)
-                std = torch.tensor([0.229, 0.224, 0.225]).to(imgs.device).view(1, 3, 1, 1)
-                imgs_ = imgs_seq.flatten(0, 1).view(-1, p, p, 3).permute(0, 3, 1, 2).mul_(std).add_(mean)
-
-                cj_num = 16
-                patch_aug_mask = torch.empty(imgs_.shape[0], 1, 1, 1, device=imgs_.device).random_(0, int(cj_num * 1.25))
-                imgs_train = torch.zeros_like(imgs_)
-                imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask[:imgs_.shape[0]] >= cj_num).type_as(imgs_))
-                for i in range(cj_num):
-                    imgs_train = imgs_train.addcmul_(CJ(imgs_).type_as(imgs_), (patch_aug_mask[:imgs_.shape[0]] == i).type_as(imgs_))
-
-                # imgs_ = imgs_train
-                # patch_aug_mask = patch_aug_mask[imgs_.shape[0]:] % 4
-                # imgs_train = torch.zeros_like(imgs_)
-                # imgs_train = imgs_train.addcmul_(imgs_, (patch_aug_mask == 0).type_as(imgs_))
-                # for i in range(1, 4):
-                #     imgs_train = imgs_train.addcmul_(torch.rot90(imgs_, i, [2, 3]), (patch_aug_mask == i).type_as(imgs_))
-
-                h = w = imgs.shape[2] // p
-                imgs_train = imgs_train.sub_(mean).div_(std).view(imgs.shape[0], h, w, 3, p, p)
-                imgs_train = imgs_train.permute(0, 3, 1, 4, 2, 5).flatten(2, 3).flatten(3, 4)
-        else:
-            imgs_train = imgs
-        pred, ids_shuffle = self.forward_encoder(imgs_train, num_seen, num_targets, attn_mask)
+        pred, ids_shuffle = self.forward_encoder(imgs, num_seen, num_targets, attn_mask)
         target_indices = ids_shuffle[:, num_seen:num_seen + num_targets, :imgs_seq.shape[-1]]
 
         target = torch.gather(imgs_seq, dim=1, index=target_indices)
@@ -405,10 +314,8 @@ class XLNetViT(nn.Module):
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)
             target = (target - mean) / (var + 1.e-6)**.5
-
         loss = ((pred - target) ** 2).mean()
-
-        return loss, pred, target_indices#, y_logits
+        return loss, pred, target_indices
 
 
 def xlnet_vit_base_patch16(**kwargs):

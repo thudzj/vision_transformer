@@ -36,31 +36,18 @@ def train_one_epoch(model: torch.nn.Module,
 
     accum_iter = args.accum_iter
 
-    patch_aug = (args.da == 'patch_aug')
-    CJ = torchvision.transforms.ColorJitter(0.8, 0.8, 0.8, 0.2) if patch_aug else None
-
     optimizer.zero_grad()
 
     for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
-            if args.mask_ratio_range is None:
-                mask_ratio = args.mask_ratio
-            else:
-                rng = np.random.RandomState(data_iter_step)
-                mask_ratio = rng.uniform(args.mask_ratio_range[0], args.mask_ratio_range[1])
-            # if data_iter_step < 20:
-            #     print(data_iter_step, mask_ratio, int(model.module.patch_embed.num_patches * (1 - mask_ratio)), force=True)
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
-        # if isinstance(samples, list):
-        #     samples = [samples[0].to(device, non_blocking=True), samples[1].to(device, non_blocking=True)]
-        # else:
         samples = samples.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            loss, _, _ = model(samples, patch_aug=patch_aug, CJ=CJ, mask_ratio=mask_ratio, num_targets=args.num_targets)
+            loss, _, _ = model(samples, mask_ratio=args.mask_ratio, num_targets=args.num_targets)
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):
@@ -113,7 +100,10 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
     ori_img = img * std + mean  # in [0, 1]
 
     img_squeeze = rearrange(ori_img, 'b c (h p1) (w p2) -> b (h w) (p1 p2) c', p1=patch_size[0], p2=patch_size[1])
-    img_norm = (img_squeeze - img_squeeze.mean(dim=-2, keepdim=True)) / (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6)
+    if args.norm_pix_loss:
+        img_norm = (img_squeeze - img_squeeze.mean(dim=-2, keepdim=True)) / (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6)
+    else:
+        img_norm = (img_squeeze - mean.view(1, 1, 1, -1)) / std.view(1, 1, 1, -1)
     img_patch = rearrange(img_norm, 'b n p c -> b n (p c)')
     img_patch.scatter_(1, target_indices, outputs)
 
@@ -126,8 +116,11 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
 
     #save reconstruction img
     rec_img = rearrange(img_patch, 'b n (p c) -> b n p c', c=3)
-    rec_img = rec_img * (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6) \
-                + img_squeeze.mean(dim=-2, keepdim=True)
+    if args.norm_pix_loss:
+        rec_img = rec_img * (img_squeeze.var(dim=-2, unbiased=True, keepdim=True).sqrt() + 1e-6) \
+                    + img_squeeze.mean(dim=-2, keepdim=True)
+    else:
+        rec_img = rec_img * std.view(1, 1, 1, -1) + mean.view(1, 1, 1, -1)
 
     rec_img = rearrange(rec_img, 'b (h w) (p1 p2) c -> b c (h p1) (w p2)',
         p1=patch_size[0], p2=patch_size[1], h=grid_size[0], w=grid_size[1])

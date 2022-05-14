@@ -37,18 +37,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     accum_iter = args.accum_iter
 
-    if args.ar:
-        attn_mask = torch.ones(1 + model.module.patch_embed.num_patches, 1 + model.module.patch_embed.num_patches).tril()
-        attn_mask[0] = 1
-        attn_mask[1:, 0] = 0
-        if epoch == 0:
-            print("Training attention mask")
-            with np.printoptions(threshold=sys.maxsize, linewidth=10000):
-                print(attn_mask.data.cpu().numpy())
-        attn_mask = attn_mask.bool().to(device)
-    else:
-        attn_mask = None
-
     optimizer.zero_grad()
 
     if log_writer is not None:
@@ -69,15 +57,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         with torch.cuda.amp.autocast():
             outputs = model(samples)
             loss = criterion(outputs, targets)
-            if args.ar:
-                ar_loss = model(samples, attn_mask=attn_mask, ar=True)
-            else:
-                ar_loss = torch.tensor(0.).to(device)
 
         loss_value = loss.item()
-        ar_loss_value = ar_loss.item()
-
-        loss = loss + ar_loss * args.alpha
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -93,7 +74,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         torch.cuda.synchronize()
 
         metric_logger.update(loss=loss_value)
-        metric_logger.update(ar_loss=ar_loss_value)
         min_lr = 10.
         max_lr = 0.
         for group in optimizer.param_groups:
@@ -103,14 +83,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         metric_logger.update(lr=max_lr)
 
         loss_value_reduce = misc.all_reduce_mean(loss_value)
-        ar_loss_value_reduce = misc.all_reduce_mean(ar_loss_value)
         if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
             """ We use epoch_1000x as the x-axis in tensorboard.
             This calibrates different curves when batch size changes.
             """
             epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
             log_writer.add_scalar('loss', loss_value_reduce, epoch_1000x)
-            log_writer.add_scalar('ar_loss', ar_loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', max_lr, epoch_1000x)
 
     # gather the stats from all processes
