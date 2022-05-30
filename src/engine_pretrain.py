@@ -136,3 +136,35 @@ def plot_evaluation_results(model, data_loader_val, device, epoch, log_writer, a
                 vis=img_mask.permute(0, 2, 3, 1).data.cpu().numpy(),
                 recon=rec_img.permute(0, 2, 3, 1).data.cpu().numpy(),)
             )
+
+@torch.no_grad()
+def generate(model, data_loader_val, device, epoch, log_writer, args, policy='natural'):
+    patch_size = model.module.patch_embed.patch_size
+    grid_size = (args.input_size // patch_size[0], args.input_size // patch_size[1])
+
+    img = next(iter(data_loader_val))[0]
+    img = img.to(device, non_blocking=True)
+
+    if policy == 'natural':
+        patch0 = img[:, :, :patch_size[0], :patch_size[1]]
+    elif policy == 'central':
+        # print(grid_size[0]//2 * grid_size[1] + grid_size[1]//2 - 1)
+        patch0 = img[:, :,
+            (grid_size[0]//2)*patch_size[0] : (grid_size[0]//2 + 1)*patch_size[0],
+            (grid_size[1]//2 - 1)*patch_size[1] : grid_size[1]//2 *patch_size[1]]
+    else:
+        raise NotImplementedError
+
+    gen_img = model.module.generate(patch0=patch0, policy=policy)
+
+    mean = torch.as_tensor([0.485, 0.456, 0.406]).to(device)[None, :, None, None]
+    std = torch.as_tensor([0.229, 0.224, 0.225]).to(device)[None, :, None, None]
+    ori_img = img * std + mean  # in [0, 1]
+
+    if log_writer is not None:
+        log_writer.write_images(
+            epoch,
+            dict(
+                groundtruth=ori_img.permute(0, 2, 3, 1).data.cpu().numpy(),
+                generations=gen_img.permute(0, 2, 3, 1).data.cpu().numpy(),)
+            )

@@ -36,7 +36,7 @@ from util.datasets import build_transform
 import models_mae
 import models_xlnet
 
-from engine_pretrain import train_one_epoch, plot_evaluation_results
+from engine_pretrain import train_one_epoch, plot_evaluation_results, generate
 
 import tensorflow as tf
 tf.config.experimental.set_visible_devices([], 'GPU')
@@ -72,6 +72,8 @@ def get_args_parser():
     parser.add_argument('--one_extra_layer', default=False, action='store_true')
     parser.add_argument('--structured_ctx', default=False, action='store_true')
     parser.add_argument('--beit_ctx', default=False, action='store_true')
+
+    parser.add_argument('--generate', default=False, action='store_true')
 
     parser.add_argument('--scale', default=[0.2, 1.], type=float, nargs='+')
 
@@ -230,6 +232,9 @@ def main(args):
 
     if 'xlnet' in args.model:
         plot_evaluation_results(model, data_loader_val, device, -1, log_writer, args)
+
+    if args.generate:
+        generate(model, data_loader_val, device, -1, log_writer, args, policy='natural')
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()

@@ -27,6 +27,8 @@ import random
 import math
 import numpy as np
 
+from einops import rearrange
+
 def beit_mask(height, width, num_masks, min_num_patches=16, max_num_patches=None,
               min_aspect=0.3, max_aspect=None):
 
@@ -72,6 +74,63 @@ def beit_mask(height, width, num_masks, min_num_patches=16, max_num_patches=None
     ids_shuffle = torch.cat([ids_ctx, others])
     return ids_shuffle
 
+
+def spiralOrder(a):
+    ans = []
+
+    if (len(a) == 0):
+        return ans
+
+    m = len(a)
+    n = len(a[0])
+
+    k = 0
+    l = 0
+
+    while (k < m and l < n):
+
+        # Print the first row from
+        # the remaining rows
+        for i in range(l, n):
+            ans.append(a[k][i])
+
+        k += 1
+
+        # Print the last column from
+        # the remaining columns
+        for i in range(k, m):
+            ans.append(a[i][n - 1])
+
+        n -= 1
+
+        # Print the last row from
+        # the remaining rows
+        if (k < m):
+
+            for i in range(n - 1, (l - 1), -1):
+                ans.append(a[m - 1][i])
+
+            m -= 1
+
+        # Print the first column from
+        # the remaining columns
+        if (l < n):
+            for i in range(m - 1, k - 1, -1):
+                ans.append(a[i][l])
+
+            l += 1
+    return ans
+
+def get_permutation(policy, length, device):
+    if policy == 'natural':
+        return torch.arange(length, device=device).view(1, -1, 1)
+    if policy == 'central':
+        # print(np.arange(length).reshape((int(length**0.5), int(length**0.5))))
+        ans = spiralOrder(np.arange(length).reshape((int(length**0.5), int(length**0.5))))
+        # print(ans[::-1])
+        return torch.tensor(ans[::-1], dtype=torch.long, device=device).view(1, -1, 1)
+    else:
+        raise NotImplementedError
 
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
@@ -316,6 +375,75 @@ class XLNetViT(nn.Module):
             target = (target - mean) / (var + 1.e-6)**.5
         loss = ((pred - target) ** 2).mean()
         return loss, pred, target_indices
+
+    def generate(self, batch_size=None, device=None, patch0=None, policy='natural', external=None):
+
+        if patch0 is None:
+            assert batch_size is not None and device is not None
+            patches = torch.zeros(batch_size,
+                                  self.patch_embed.num_patches,
+                                  nn.head.out_features, device=device)
+            start = 0
+        else:
+            # patch0 has been normalized and is of shape [B, c, p1, p2]
+            assert patch0.dim() == 4 and np.prod(patch0.shape[1:]) == self.head.out_features
+            device = patch0.device
+            patches = torch.zeros(patch0.shape[0],
+                                  self.patch_embed.num_patches,
+                                  self.head.out_features, device=device)
+            patches[:, 0, :] = patch0.flatten(2).transpose(1, 2).flatten(1)
+            start = 1
+
+        permutation = get_permutation(policy, self.patch_embed.num_patches, device)
+        permutation = permutation.repeat(1, 1, self.pos_embed.shape[-1])
+        pos_embed = torch.gather(self.pos_embed[:, 1:, :], dim=1, index=permutation)
+        queries = (self.mask_token + pos_embed).repeat(patches.shape[0], 1, 1)
+
+        for i in range(start, self.patch_embed.num_patches):
+            if i > 0:
+                cur_context = rearrange(patches[:, :i, :],
+                                        'b n (p1 p2 c) -> b c (n p1) p2',
+                                        p1=self.patch_embed.patch_size[0],
+                                        p2=self.patch_embed.patch_size[1],
+                                        c=3)
+                cur_context = self.patch_embed.proj(cur_context).flatten(2).transpose(1, 2)
+
+                cur_context += pos_embed[:, :i, :]
+            else:
+                cur_context = None
+
+            query = queries[:, i:i+1, :]
+
+            if cur_context is None:
+                assert external is None
+                # fuse external info to cur_context
+                pass
+
+            x = torch.cat([cur_context, query], 1)
+            for blk in self.blocks:
+                x = blk(x, select_kv=x.shape[1] - 1)
+
+            query = x[:, -1:]
+            if self.one_extra_layer:
+                query = query + self.extra_attn(self.extra_norm(query),
+                                                self.extra_norm(x[:, :-1]))
+
+            cur_patch = self.head(self.norm(query))
+            patches[:, i:i+1, :] = cur_patch
+
+        gen = torch.empty_like(patches)
+        gen.scatter_(1, permutation.expand_as(patches), patches)
+
+        gen = rearrange(gen, 'b (h w) (p1 p2 c) -> b c (h p1) (w p2)',
+                        h=int(self.patch_embed.num_patches ** 0.5),
+                        w=int(self.patch_embed.num_patches ** 0.5),
+                        p1=self.patch_embed.patch_size[0],
+                        p2=self.patch_embed.patch_size[1],
+                        c=3)
+        mean = torch.as_tensor([0.485, 0.456, 0.406]).to(device).view(1, -1, 1, 1)
+        std = torch.as_tensor([0.229, 0.224, 0.225]).to(device).view(1, -1, 1, 1)
+        gen = gen * std + mean
+        return gen
 
 
 def xlnet_vit_base_patch16(**kwargs):
