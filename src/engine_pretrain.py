@@ -145,17 +145,19 @@ def generate(model, data_loader_val, device, epoch, log_writer, args, policy='na
     img = next(iter(data_loader_val))[0]
     img = img.to(device, non_blocking=True)
 
-    if policy == 'natural':
-        patch0 = img[:, :, :patch_size[0], :patch_size[1]]
-    elif policy == 'central':
-        # print(grid_size[0]//2 * grid_size[1] + grid_size[1]//2 - 1)
-        patch0 = img[:, :,
-            (grid_size[0]//2)*patch_size[0] : (grid_size[0]//2 + 1)*patch_size[0],
-            (grid_size[1]//2 - 1)*patch_size[1] : grid_size[1]//2 *patch_size[1]]
-    else:
-        raise NotImplementedError
+    # if policy == 'natural':
+    #     patch0 = img[:, :, :patch_size[0], :patch_size[1]]
+    # elif policy == 'central':
+    #     # print(grid_size[0]//2 * grid_size[1] + grid_size[1]//2 - 1)
+    #     patch0 = img[:, :,
+    #         (grid_size[0]//2)*patch_size[0] : (grid_size[0]//2 + 1)*patch_size[0],
+    #         (grid_size[1]//2 - 1)*patch_size[1] : grid_size[1]//2 *patch_size[1]]
+    # else:
+    #     raise NotImplementedError
 
-    gen_img = model.module.generate(patch0=patch0, policy=policy)
+    external = model.module.patch_embed(img) + model.module.pos_embed[:, 1:, :]
+    gen_img = model.module.generate(batch_size=external.shape[0], device=external.device,
+                                    policy=policy, external=external)
 
     mean = torch.as_tensor([0.485, 0.456, 0.406]).to(device)[None, :, None, None]
     std = torch.as_tensor([0.229, 0.224, 0.225]).to(device)[None, :, None, None]

@@ -382,7 +382,7 @@ class XLNetViT(nn.Module):
             assert batch_size is not None and device is not None
             patches = torch.zeros(batch_size,
                                   self.patch_embed.num_patches,
-                                  nn.head.out_features, device=device)
+                                  self.head.out_features, device=device)
             start = 0
         else:
             # patch0 has been normalized and is of shape [B, c, p1, p2]
@@ -414,10 +414,11 @@ class XLNetViT(nn.Module):
 
             query = queries[:, i:i+1, :]
 
-            if cur_context is None:
-                assert external is None
-                # fuse external info to cur_context
-                pass
+            if external is not None:
+                if cur_context is None:
+                    cur_context = external
+                else:
+                    cur_context = torch.cat([external, cur_context], 1)
 
             x = torch.cat([cur_context, query], 1)
             for blk in self.blocks:
