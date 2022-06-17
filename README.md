@@ -503,6 +503,6 @@ src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-struc
 src/main_pretrain.py --batch_size 64 --accum_iter 2 --model xlnet_vit_base_patch16 --epochs 1600 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx-1600-oel-nonorm-s0.875 --structured_ctx --one_extra_layer --scale 0.875 1
 src/main_finetune.py --finetune logs/pretrain_xlnet_base_patch16_224_m0.75-structuredctx-1600-oel-nonorm-s0.875/checkpoint-1599.pth --batch_size 64 --model vit_base_patch16 --epochs 100 --blr 5e-4 --layer_decay 0.65 --drop_path 0.1 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 
-src/main_pretrain.py --batch_size 16 --accum_iter 8 --model xlnet_vit_large_patch16 --norm_pix_loss --epochs 1600 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx-1600-oel --structured_ctx --one_extra_layer
-src/main_finetune.py --finetune logs/pretrain_xlnet_large_patch16_224_m0.75-structuredctx-1600-oel/checkpoint-1599.pth --batch_size 32 --model vit_large_patch16 --epochs 50 --blr 1e-3 --layer_decay 0.75 --drop_path 0.2 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
+src/main_pretrain.py --batch_size 16 --accum_iter 8 --model xlnet_vit_large_patch16 --epochs 1600 --warmup_epochs 40 --blr 1.5e-4  --mask_ratio 0.75 --num_targets 49 --tag m0.75-structuredctx-1600-oel-nonorm --structured_ctx --one_extra_layer
+src/main_finetune.py --finetune logs/pretrain_xlnet_large_patch16_224_m0.75-structuredctx-1600-oel-nonorm/checkpoint-1599.pth --batch_size 32 --model vit_large_patch16 --epochs 50 --blr 1e-3 --layer_decay 0.75 --drop_path 0.2 --reprob 0.25 --mixup 0.8 --cutmix 1.0 --dist_eval
 ```
